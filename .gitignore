@@ -1,0 +1,69 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Operating systems
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Dependencies
+node_modules/
+packages/
+vendor/
+
+# Build outputs
+dist/
+build/
+out/
+bin/
+obj/
+target/
+
+# Test and coverage output
+coverage/
+.coverage
+test-results/
+
+# Azure and local tooling
+.azure/
+local.settings.json
+
+# Secrets and certificates
+*.pem
+*.pfx
+*.key
+*.crt
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+.terraformrc
