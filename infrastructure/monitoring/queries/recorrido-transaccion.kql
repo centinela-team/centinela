@@ -1,0 +1,17 @@
+// End-to-end journey of one transaction across every service, correlated
+// by the correlationId assigned at ingestion and propagated through the
+// pipeline (customDimensions.correlationId in all telemetry).
+// Replace the value below or wire it to the workbook parameter.
+let correlationId = "<correlation-id>";
+union requests, dependencies, traces, exceptions
+| where tostring(customDimensions.correlationId) == correlationId
+| project
+    timestamp,
+    stage = cloud_RoleName,
+    itemType,
+    detail = coalesce(name, message, type),
+    success,
+    duration,
+    transactionId = tostring(customDimensions.transactionId),
+    caseId = tostring(customDimensions.caseId)
+| order by timestamp asc

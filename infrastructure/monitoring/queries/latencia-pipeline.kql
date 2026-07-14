@@ -1,0 +1,24 @@
+// End-to-end pipeline latency: from the ingestion acknowledgment to the
+// fraud case creation, joined by correlationId. The client already got
+// its response at ingestion — this measures the asynchronous tail.
+let window = 24h;
+let ingested = requests
+    | where timestamp > ago(window)
+    | where cloud_RoleName == "ingestion-api" and success == true
+    | project correlationId = tostring(customDimensions.correlationId),
+              tIngesta = timestamp;
+let caseCreated = traces
+    | where timestamp > ago(window)
+    | where message == "case_created"
+    | project correlationId = tostring(customDimensions.correlationId),
+              tCaso = timestamp;
+ingested
+| join kind=inner caseCreated on correlationId
+| extend e2eSegundos = datetime_diff('millisecond', tCaso, tIngesta) / 1000.0
+| summarize
+    p50 = percentile(e2eSegundos, 50),
+    p95 = percentile(e2eSegundos, 95),
+    maximo = max(e2eSegundos),
+    casos = count()
+    by bin(tIngesta, 15m)
+| order by tIngesta asc

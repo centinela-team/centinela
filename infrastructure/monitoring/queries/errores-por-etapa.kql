@@ -1,0 +1,15 @@
+// Failed requests and unhandled exceptions per service (5-minute bins).
+// stage = cloud_RoleName identifies the pipeline component
+// (ingestion-api, scoring-engine, case-service, ...).
+let window = 24h;
+union
+    (requests
+        | where timestamp > ago(window) and success == false
+        | project timestamp, stage = cloud_RoleName,
+                  tipo = "failed_request", detalle = name),
+    (exceptions
+        | where timestamp > ago(window)
+        | project timestamp, stage = cloud_RoleName,
+                  tipo = "exception", detalle = type)
+| summarize total = count() by bin(timestamp, 5m), stage, tipo
+| order by timestamp desc

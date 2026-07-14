@@ -1,0 +1,10 @@
+// Business funnel over time: transactions ingested, scored and flagged
+// as fraud cases. Relies on the canonical structured events every
+// service emits (see infrastructure/monitoring/README.md):
+// transaction_received, transaction_scored, case_created.
+let window = 24h;
+traces
+| where timestamp > ago(window)
+| where message in ("transaction_received", "transaction_scored", "case_created")
+| summarize total = count() by bin(timestamp, 15m), etapa = message
+| order by timestamp asc
