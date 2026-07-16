@@ -94,8 +94,8 @@ El alcance se limita a lo indicado en la especificacion: ingesta desacoplada, sc
 
 | ID | Nombre | Descripcion | Prioridad | Responsable | Estimacion (horas) | Dependencias | Carpeta donde debe implementarse | Definicion de terminado |
 |---|---|---|---|---|---:|---|---|---|
-| T-007 | Validacion de servicios Azure | Documentar region, disponibilidad, cuotas y restricciones de los servicios requeridos. | Alta | Juan C. | 3 | T-001 | `docs/architecture/` | Documento con servicios validados, riesgos de cuota y decisiones de region. |
-| T-008 | Plan de costos y apagado | Documentar estrategia para mantenerse por debajo de USD 60 y apagar recursos no usados. | Media | Juan C. | 2 | T-007 | `infrastructure/scripts/`, `docs/architecture/` | Plan con acciones concretas de control de costos y responsables de seguimiento. |
+| T-007 | Validacion de servicios Azure | Documentar region, disponibilidad, cuotas y restricciones de los servicios requeridos. | Alta | Juliana | 3 | T-001 | `docs/architecture/` | Documento con servicios validados, riesgos de cuota y decisiones de region. |
+| T-008 | Plan de costos y apagado | Documentar estrategia para mantenerse por debajo de USD 60 y apagar recursos no usados. | Media | Juliana | 2 | T-007 | `infrastructure/scripts/`, `docs/architecture/` | Plan con acciones concretas de control de costos y responsables de seguimiento. |
 
 # Epica 2 - Ingesta Desacoplada de Transacciones
 
@@ -117,7 +117,7 @@ El alcance se limita a lo indicado en la especificacion: ingesta desacoplada, sc
 | ID | Nombre | Descripcion | Prioridad | Responsable | Estimacion (horas) | Dependencias | Carpeta donde debe implementarse | Definicion de terminado |
 |---|---|---|---|---|---:|---|---|---|
 | T-009 | Estructura de ingesta | Preparar la base del modulo de ingesta segun el contrato, sin implementar logica de negocio adicional. | Alta | Gabriela | 4 | T-003 | `backend/ingestion-api/` | Modulo organizado para recibir transacciones conforme al contrato y documentado para implementacion. |
-| T-010 | Documentacion de comportamiento de API | Documentar validaciones, respuesta inmediata, errores esperados y ejemplos de uso. | Alta | Gabriela | 3 | T-003, T-009 | `docs/api/`, `postman/` | Documentacion y ejemplos listos para probar el contrato de ingesta. |
+| T-010 | Documentacion de comportamiento de API | Documentar validaciones, respuesta inmediata, errores esperados y ejemplos de uso. | Alta | Juliana | 3 | T-003, T-009 | `docs/api/`, `postman/` | Documentacion y ejemplos listos para probar el contrato de ingesta. |
 
 ## Historia de Usuario 2.2 - Publicar la transaccion como evento
 
@@ -220,7 +220,7 @@ El alcance se limita a lo indicado en la especificacion: ingesta desacoplada, sc
 
 | ID | Nombre | Descripcion | Prioridad | Responsable | Estimacion (horas) | Dependencias | Carpeta donde debe implementarse | Definicion de terminado |
 |---|---|---|---|---|---:|---|---|---|
-| T-019 | Plantillas de explicacion | Definir plantillas deterministicas para explicar reglas disparadas. | Alta | Juan C. | 4 | T-014, T-015 | `backend/explanation-service/`, `docs/architecture/` | Plantillas cubren score, umbral y evidencias de reglas especificadas. |
+| T-019 | Plantillas de explicacion | Definir plantillas deterministicas para explicar reglas disparadas. | Alta | Juan Esteban | 4 | T-014, T-015 | `backend/explanation-service/`, `docs/architecture/` | Plantillas cubren score, umbral y evidencias de reglas especificadas. |
 | T-020 | Contrato de explicacion de caso | Definir estructura de entrada y salida para generar y persistir explicaciones. | Media | Juan Pablo | 3 | T-019 | `contracts/api/`, `contracts/events/` | Contrato documentado con ejemplo de explicacion legible. |
 
 # Epica 5 - Verificacion Documental, Seguridad y Roles
@@ -242,8 +242,8 @@ El alcance se limita a lo indicado en la especificacion: ingesta desacoplada, sc
 
 | ID | Nombre | Descripcion | Prioridad | Responsable | Estimacion (horas) | Dependencias | Carpeta donde debe implementarse | Definicion de terminado |
 |---|---|---|---|---|---:|---|---|---|
-| T-021 | Diseno de almacenamiento documental | Definir estructura para documentos, metadata, asociacion con casos y almacenamiento en Blob Storage. | Media | Gabriela | 3 | T-017 | `backend/document-service/`, `docs/architecture/` | Diseno documentado para carga, lectura y asociacion de documentos a casos. |
-| T-022 | Integracion documental con IA | Documentar uso de Azure AI Document Intelligence, campos esperados y manejo de errores. | Media | Gabriela | 3 | T-007, T-021 | `backend/document-service/`, `docs/architecture/` | Integracion documentada con disponibilidad validada y plan de manejo de fallos. |
+| T-021 | Diseno de almacenamiento documental | Definir estructura para documentos, metadata, asociacion con casos y almacenamiento en Blob Storage. | Media | Juliana | 3 | T-017 | `backend/document-service/`, `docs/architecture/` | Diseno documentado para carga, lectura y asociacion de documentos a casos. |
+| T-022 | Integracion documental con IA | Documentar uso de Azure AI Document Intelligence, campos esperados y manejo de errores. | Media | Juliana | 3 | T-007, T-021 | `backend/document-service/`, `docs/architecture/` | Integracion documentada con disponibilidad validada y plan de manejo de fallos. |
 
 ## Historia de Usuario 5.2 - Controlar acceso por roles y secretos
 
@@ -263,7 +263,7 @@ El alcance se limita a lo indicado en la especificacion: ingesta desacoplada, sc
 | ID | Nombre | Descripcion | Prioridad | Responsable | Estimacion (horas) | Dependencias | Carpeta donde debe implementarse | Definicion de terminado |
 |---|---|---|---|---|---:|---|---|---|
 | T-023 | Matriz de roles y permisos | Definir permisos para analista, administrador, auditor y servicio. | Alta | Juan Pablo | 3 | T-001 | `docs/architecture/` | Matriz documentada con acciones permitidas y restringidas por rol. |
-| T-024 | Estrategia de secretos | Definir uso de Key Vault, variables requeridas y reglas para no versionar secretos. | Alta | Juan Pablo | 3 | T-005 | `infrastructure/bicep/`, `docs/architecture/` | Estrategia documentada y alineada con `.env.example` sin secretos reales. |
+| T-024 | Estrategia de secretos | Definir uso de Key Vault, variables requeridas y reglas para no versionar secretos. | Alta | Gabriela | 3 | T-005 | `infrastructure/bicep/`, `docs/architecture/` | Estrategia documentada y alineada con `.env.example` sin secretos reales. |
 
 # Epica 6 - Observabilidad, Pruebas y Demostracion Final
 
@@ -284,7 +284,7 @@ El alcance se limita a lo indicado en la especificacion: ingesta desacoplada, sc
 
 | ID | Nombre | Descripcion | Prioridad | Responsable | Estimacion (horas) | Dependencias | Carpeta donde debe implementarse | Definicion de terminado |
 |---|---|---|---|---|---:|---|---|---|
-| T-025 | Plan de observabilidad | Definir trazas, metricas, logs, correlacion y alertas minimas. | Alta | Andrea | 4 | T-001, T-004 | `infrastructure/monitoring/`, `docs/architecture/` | Plan cubre API, mensajeria, scoring, casos, errores y costos. |
+| T-025 | Plan de observabilidad | Definir trazas, metricas, logs, correlacion y alertas minimas. | Alta | Juan C. | 4 | T-001, T-004 | `infrastructure/monitoring/`, `docs/architecture/` | Plan cubre API, mensajeria, scoring, casos, errores y costos. |
 | T-026 | Consultas y tablero operativo | Preparar definicion de dashboard operativo y consultas para seguimiento de transacciones. | Media | Juan Esteban | 3 | T-025 | `infrastructure/monitoring/` | Dashboard y consultas documentadas para volumen, errores, latencia y casos. |
 
 ## Historia de Usuario 6.2 - Validar el flujo principal y preparar demo
@@ -321,10 +321,10 @@ El sprint backlog incluye todas las tareas del Product Backlog porque el proyect
 | T-004 | Contratos de eventos | Alta | Gabriela | 3 | `contracts/events/` |
 | T-005 | Plantilla base de infraestructura | Alta | Juan Pablo | 4 | `infrastructure/bicep/` |
 | T-006 | Parametros y scripts operativos | Alta | Juan Pablo | 3 | `infrastructure/parameters/`, `infrastructure/scripts/` |
-| T-007 | Validacion de servicios Azure | Alta | Juan C. | 3 | `docs/architecture/` |
-| T-008 | Plan de costos y apagado | Media | Juan C. | 2 | `infrastructure/scripts/`, `docs/architecture/` |
+| T-007 | Validacion de servicios Azure | Alta | Juliana | 3 | `docs/architecture/` |
+| T-008 | Plan de costos y apagado | Media | Juliana | 2 | `infrastructure/scripts/`, `docs/architecture/` |
 | T-009 | Estructura de ingesta | Alta | Gabriela | 4 | `backend/ingestion-api/` |
-| T-010 | Documentacion de comportamiento de API | Alta | Gabriela | 3 | `docs/api/`, `postman/` |
+| T-010 | Documentacion de comportamiento de API | Alta | Juliana | 3 | `docs/api/`, `postman/` |
 | T-011 | Diseno de publicacion de eventos | Alta | Juan Pablo | 3 | `docs/events/`, `contracts/events/` |
 | T-012 | Coleccion de pruebas manuales de ingesta | Media | Juan C. | 3 | `postman/`, `samples/` |
 | T-013 | Diseno del motor de reglas | Alta | Andrea | 4 | `backend/scoring-engine/`, `backend/shared/rules/`, `docs/architecture/` |
@@ -333,13 +333,13 @@ El sprint backlog incluye todas las tareas del Product Backlog porque el proyect
 | T-016 | Estrategia de particionamiento | Alta | Juan Esteban | 3 | `docs/decisions/`, `docs/architecture/` |
 | T-017 | Modelo de gestion de casos | Alta | Juan Esteban | 4 | `backend/case-service/`, `backend/shared/models/` |
 | T-018 | Flujo de apertura y resolucion | Alta | Juan Esteban | 3 | `docs/events/`, `docs/api/` |
-| T-019 | Plantillas de explicacion | Alta | Juan C. | 4 | `backend/explanation-service/`, `docs/architecture/` |
+| T-019 | Plantillas de explicacion | Alta | Juan Esteban | 4 | `backend/explanation-service/`, `docs/architecture/` |
 | T-020 | Contrato de explicacion de caso | Media | Juan Pablo | 3 | `contracts/api/`, `contracts/events/` |
-| T-021 | Diseno de almacenamiento documental | Media | Gabriela | 3 | `backend/document-service/`, `docs/architecture/` |
-| T-022 | Integracion documental con IA | Media | Gabriela | 3 | `backend/document-service/`, `docs/architecture/` |
+| T-021 | Diseno de almacenamiento documental | Media | Juliana | 3 | `backend/document-service/`, `docs/architecture/` |
+| T-022 | Integracion documental con IA | Media | Juliana | 3 | `backend/document-service/`, `docs/architecture/` |
 | T-023 | Matriz de roles y permisos | Alta | Juan Pablo | 3 | `docs/architecture/` |
-| T-024 | Estrategia de secretos | Alta | Juan Pablo | 3 | `infrastructure/bicep/`, `docs/architecture/` |
-| T-025 | Plan de observabilidad | Alta | Andrea | 4 | `infrastructure/monitoring/`, `docs/architecture/` |
+| T-024 | Estrategia de secretos | Alta | Gabriela | 3 | `infrastructure/bicep/`, `docs/architecture/` |
+| T-025 | Plan de observabilidad | Alta | Juan C. | 4 | `infrastructure/monitoring/`, `docs/architecture/` |
 | T-026 | Consultas y tablero operativo | Media | Juan Esteban | 3 | `infrastructure/monitoring/` |
 | T-027 | Plan de pruebas del sprint | Media | Juan C. | 3 | `tests/`, `docs/backlog/` |
 | T-028 | Guion de demostracion final | Alta | Juan C. | 3 | `samples/`, `docs/meeting-notes/` |
@@ -348,23 +348,25 @@ El sprint backlog incluye todas las tareas del Product Backlog porque el proyect
 
 | Integrante | Responsabilidad principal | Modulos del proyecto | Carpetas donde trabajara | Rama Git recomendada |
 |---|---|---|---|---|
-| Andrea | Arquitectura funcional, scoring y plan de observabilidad | Arquitectura, decisiones, motor de reglas, evidencias, plan de monitoreo | `docs/architecture/`, `docs/decisions/`, `backend/scoring-engine/`, `backend/shared/rules/`, `infrastructure/monitoring/` | `feature/scoring-engine` |
-| Gabriela | Contratos, API de ingesta y documentacion documental | API de ingesta, contratos, documentos, ejemplos de API | `contracts/api/`, `contracts/events/`, `backend/ingestion-api/`, `docs/api/`, `backend/document-service/`, `postman/` | `feature/ingestion-api` |
-| Juan Pablo | Infraestructura, mensajeria, seguridad, secretos y contrato de explicacion | IaC, parametros, scripts, publicacion de eventos, roles, Key Vault, contratos | `infrastructure/bicep/`, `infrastructure/parameters/`, `infrastructure/scripts/`, `docs/events/`, `docs/architecture/`, `contracts/api/`, `contracts/events/` | `feature/infrastructure` |
-| Juan Esteban | Datos transaccionales, gestion de casos y tablero operativo | Modelos, particionamiento, casos, estados, auditoria, consultas de monitoreo | `backend/shared/models/`, `backend/case-service/`, `docs/decisions/`, `docs/events/`, `docs/api/`, `infrastructure/monitoring/` | `feature/case-management` |
-| Juan C. | Validacion Azure, costos, explicador, pruebas y demo | Validacion regional, costos, explicador, muestras, plan de pruebas y demo | `docs/architecture/`, `infrastructure/scripts/`, `backend/explanation-service/`, `samples/`, `tests/`, `docs/meeting-notes/` | `feature/frontend-dashboard` |
+| Andrea | Arquitectura funcional y motor de reglas | Arquitectura, decisiones, motor de reglas, evidencias | `docs/architecture/`, `docs/decisions/`, `backend/scoring-engine/`, `backend/shared/rules/` | `feature/scoring-engine` |
+| Gabriela | Contratos, API de ingesta, documentacion documental y secretos | API de ingesta, contratos, documentos, ejemplos de API, estrategia de secretos | `contracts/api/`, `contracts/events/`, `backend/ingestion-api/`, `docs/api/`, `backend/document-service/`, `postman/`, `infrastructure/bicep/` | `feature/ingestion-api` |
+| Juan Pablo | Infraestructura, mensajeria, seguridad, roles y contrato de explicacion | IaC, parametros, scripts, publicacion de eventos, roles, Key Vault, contratos | `infrastructure/bicep/`, `infrastructure/parameters/`, `infrastructure/scripts/`, `docs/events/`, `docs/architecture/`, `contracts/api/`, `contracts/events/` | `feature/infrastructure` |
+| Juan Esteban | Datos transaccionales, gestion de casos, tablero y explicador | Modelos, particionamiento, casos, estados, auditoria, consultas de monitoreo, plantillas de explicacion | `backend/shared/models/`, `backend/case-service/`, `docs/decisions/`, `docs/events/`, `docs/api/`, `infrastructure/monitoring/`, `backend/explanation-service/` | `feature/case-management` |
+| Juan C. | Pruebas, demo, observabilidad y pruebas manuales de ingesta | Plan de pruebas, guion de demo, plan de observabilidad, coleccion de pruebas manuales | `tests/`, `docs/backlog/`, `samples/`, `docs/meeting-notes/`, `infrastructure/monitoring/`, `postman/` | `feature/frontend-dashboard` |
+| Juliana | Validacion Azure, costos, documentacion de API y verificacion documental | Validacion regional, costos, documentacion de API, almacenamiento documental, integracion con IA | `docs/architecture/`, `infrastructure/scripts/`, `docs/api/`, `postman/`, `backend/document-service/`, `samples/` | `feature/juliana` |
 
 ## Carga estimada por integrante
 
 | Integrante | Tareas | Total estimado |
 |---|---|---:|
-| Andrea | T-001, T-002, T-013, T-014, T-025 | 17 horas |
-| Gabriela | T-003, T-004, T-009, T-010, T-021, T-022 | 19 horas |
-| Juan Pablo | T-005, T-006, T-011, T-020, T-023, T-024 | 19 horas |
-| Juan Esteban | T-015, T-016, T-017, T-018, T-026 | 17 horas |
-| Juan C. | T-007, T-008, T-012, T-019, T-027, T-028 | 18 horas |
+| Andrea | T-001, T-002, T-013, T-014 | 13 horas |
+| Gabriela | T-003, T-004, T-009, T-024 | 13 horas |
+| Juan Pablo | T-005, T-006, T-011, T-020, T-023 | 17 horas |
+| Juan Esteban | T-015, T-016, T-017, T-018, T-019, T-026 | 21 horas |
+| Juan C. | T-012, T-025, T-027, T-028 | 13 horas |
+| Juliana | T-007, T-008, T-010, T-021, T-022 | 14 horas |
 
-La distribucion mantiene una carga balanceada para una semana de trabajo estudiantil. Ningun integrante queda por debajo de 17 horas ni por encima de 19 horas estimadas.
+La distribucion mantiene una carga balanceada para una semana de trabajo estudiantil, ahora con 6 integrantes. El rango de carga estimada es de 13 a 21 horas, con un promedio de aproximadamente 15 horas por persona. Juliana quedó en 14 horas tras ceder T-019 al bloque de gestión de casos (Juan Esteban).
 
 # Dependencias entre tareas
 

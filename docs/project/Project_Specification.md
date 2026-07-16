@@ -6,7 +6,7 @@
 
 Una fintech los contrató. Procesa transacciones de tarjetas y transferencias, y está perdiendo dinero por fraude que nadie detecta a tiempo.
 
-Ustedes van a construir Centinela: el sistema que vigila ese flujo de transacciones y detecta, en tiempo real, cuáles son sospechosas.
+Ustedes van a construir Centinela: el sistema que vigila ese flujo de transacciones y detecta, en tiempo real, cuáles son sospechosa s.
 
 Cada vez que un cliente hace una compra, transferencia o retiro, la transacción entra a Centinela. El sistema la analiza contra un conjunto de reglas de riesgo, calcula un puntaje (*score*) y decide en milisegundos:
 

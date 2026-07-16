@@ -176,19 +176,21 @@ centinela/
 
 | Integrante | Responsabilidad principal | Módulos | Rama recomendada |
 |---|---|---|---|
-| **Andrea** | Arquitectura funcional, scoring, observabilidad | Arquitectura, decisiones, motor de reglas, evidencias, monitoreo | `feature/scoring-engine` |
-| **Gabriela** | Contratos, API de ingesta, documentación documental | API de ingesta, contratos, documentos, ejemplos de API | `feature/ingestion-api` |
-| **Juan Pablo** | Infraestructura, mensajería, seguridad, secretos, contrato de explicación | IaC, parámetros, scripts, publicación de eventos, roles, Key Vault | `feature/infrastructure` |
-| **Juan Esteban** | Datos transaccionales, gestión de casos, tablero | Modelos, particionamiento, casos, estados, auditoría, consultas | `feature/case-management` |
-| **Juan C.** | Validación Azure, costos, explicador, pruebas, demo | Validación regional, costos, explicador, muestras, pruebas, demo | `feature/frontend-dashboard` |
+| **Andrea** | Arquitectura funcional y motor de reglas | Arquitectura, decisiones, motor de reglas, evidencias | `feature/scoring-engine` |
+| **Gabriela** | Contratos, API de ingesta, documentación documental y secretos | API de ingesta, contratos, documentos, ejemplos de API, estrategia de secretos | `feature/ingestion-api` |
+| **Juan Pablo** | Infraestructura, mensajería, seguridad, roles y contrato de explicación | IaC, parámetros, scripts, publicación de eventos, roles, Key Vault | `feature/infrastructure` |
+| **Juan Esteban** | Datos transaccionales, gestión de casos, tablero y explicador | Modelos, particionamiento, casos, estados, auditoría, consultas, plantillas de explicación | `feature/case-management` |
+| **Juan C.** | Pruebas, demo, observabilidad y pruebas manuales de ingesta | Plan de pruebas, guion de demo, plan de observabilidad, colección de pruebas manuales | `feature/frontend-dashboard` |
+| **Juliana** | Validación Azure, costos, documentación de API y verificación documental | Validación regional, costos, documentación de API, almacenamiento documental, integración con IA | `feature/juliana` |
 
 ### Asignación de tareas (Backlog)
 
-- **Andrea (17h)**: T-001, T-002, T-013, T-014, T-025.
-- **Gabriela (19h)**: T-003, T-004, T-009, T-010, T-021, T-022.
-- **Juan Pablo (19h)**: T-005, T-006, T-011, T-020, T-023, T-024.
-- **Juan Esteban (17h)**: T-015, T-016, T-017, T-018, T-026.
-- **Juan C. (18h)**: T-007, T-008, T-012, T-019, T-027, T-028.
+- **Andrea (13h)**: T-001, T-002, T-013, T-014.
+- **Gabriela (13h)**: T-003, T-004, T-009, T-024.
+- **Juan Pablo (17h)**: T-005, T-006, T-011, T-020, T-023.
+- **Juan Esteban (21h)**: T-015, T-016, T-017, T-018, T-019, T-026.
+- **Juan C. (13h)**: T-012, T-025, T-027, T-028.
+- **Juliana (14h)**: T-007, T-008, T-010, T-021, T-022.
 
 ---
 
@@ -196,9 +198,9 @@ centinela/
 
 - **Tipo**: un único sprint de una semana.
 - **Estado**: no iniciado en código; documentación de planeación completa.
-- **Total**: 14 historias de usuario, 28 tareas técnicas, 90 horas estimadas.
-- **Balance**: Andrea 17h, Gabriela 19h, Juan Pablo 19h, Juan Esteban 17h,
-  Juan C. 18h.
+- **Total**: 14 historias de usuario, 28 tareas técnicas, 91 horas estimadas.
+- **Balance (6 integrantes)**: Andrea 13h, Gabriela 13h, Juan Pablo 17h,
+  Juan Esteban 21h, Juan C. 13h, Juliana 14h. Rango 13–21h, promedio ~15h.
 - **Tareas críticas (bloqueantes)**: T-001, T-003, T-004, T-005.
 - **Riesgos del sprint**:
   - Alcance muy amplio para una semana.

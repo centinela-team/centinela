@@ -1,3 +1,190 @@
+¿Qué es Centinela?
+
+Centinela es un sistema inteligente para la detección de fraude en transacciones financieras, desarrollado sobre Microsoft Azure.
+
+El objetivo del proyecto es construir un MVP (Producto Mínimo Viable) que permita analizar una transacción, calcular un nivel de riesgo y generar una explicación de por qué esa transacción fue clasificada como sospechosa o no.
+
+No busca reemplazar a un analista humano, sino servir como una herramienta de apoyo para tomar decisiones más rápidas y fundamentadas.
+
+
+Problema que resuelve
+
+Las entidades financieras reciben miles de transacciones cada día.
+
+Revisarlas manualmente implica:
+
+mucho tiempo,
+alto costo,
+posibilidad de errores humanos.
+
+Centinela automatiza el análisis inicial para que solo las transacciones de mayor riesgo sean revisadas por un analista.
+
+Objetivo general
+
+Desarrollar una plataforma capaz de:
+
+recibir información de una transacción,
+evaluar diferentes reglas de fraude,
+calcular un puntaje de riesgo,
+clasificar la transacción,
+generar una explicación del resultado,
+almacenar el historial para futuras consultas.
+
+
+Arquitectura general
+
+El proyecto está dividido en varios módulos.
+
+Backend
+
+Desarrollado con Python + FastAPI.
+
+Se encargará de:
+
+recibir las solicitudes
+procesar datos
+aplicar reglas
+calcular el score de fraude
+exponer APIs
+
+Frontend
+
+Desarrollado con React + TypeScript.
+
+Permitirá:
+
+consultar transacciones
+visualizar resultados
+revisar casos
+administrar información
+
+Base de datos
+
+Almacenará:
+
+transacciones
+usuarios
+resultados
+reglas
+historial
+auditorías
+
+Azure
+
+Toda la solución será desplegada en Azure utilizando servicios cloud para garantizar escalabilidad y disponibilidad.
+
+
+Flujo del sistema
+
+El funcionamiento general será:
+
+
+Usuario
+
+↓
+
+Envía una transacción
+
+↓
+
+API recibe la información
+
+↓
+
+Motor de reglas analiza
+
+↓
+
+Calcula Score
+
+↓
+
+Clasifica Riesgo
+
+↓
+
+Genera explicación
+
+↓
+
+Guarda el resultado
+
+↓
+
+Devuelve la respuesta al usuario
+
+
+Componentes principales
+
+El sistema estará compuesto por varios módulos:
+
+API de ingreso de transacciones
+Motor de reglas
+Motor de scoring
+Servicio de explicaciones
+Servicio documental
+Dashboard administrativo
+Dashboard para analistas
+Base de datos
+Infraestructura Azure
+
+
+Tecnologías
+
+El stack tecnológico será:
+
+Backend
+Python
+FastAPI
+
+Frontend
+React
+TypeScript
+
+Base de datos
+Azure Cosmos DB (o Azure SQL, según la implementación final)
+
+Infraestructura
+Microsoft Azure
+Bicep
+
+Herramientas
+Git
+GitHub
+GitHub Projects
+GitHub Actions
+Postman
+
+
+Entregables principales
+
+Al finalizar el Sprint se espera entregar:
+
+MVP funcional.
+API desarrollada.
+Frontend funcional.
+Motor básico de detección de fraude.
+Sistema de puntuación (Scoring).
+Documentación técnica.
+Infraestructura desplegada en Azure.
+Repositorio organizado en GitHub.
+Backlog completo.
+GitHub Project actualizado.
+Evidencias de pruebas.
+
+RESULTADO ESPERADO
+
+Al finalizar el proyecto, Centinela permitirá:
+
+Analizar transacciones automáticamente.
+Detectar posibles fraudes.
+Calcular un puntaje de riesgo.
+Explicar el motivo de la clasificación.
+Mostrar la información mediante una interfaz web.
+Mantener un registro histórico para auditoría y seguimiento.
+
+Este MVP demostrará cómo integrar desarrollo de software, servicios de Azure, buenas prácticas de ingeniería, trabajo colaborativo con GitHub Projects y metodologías ágiles para resolver un problema real de detección de fraude financiero.
+
 
 
 
