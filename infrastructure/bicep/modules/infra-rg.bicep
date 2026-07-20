@@ -51,14 +51,9 @@ module storage './storage-account.bicep' = {
   }
 }
 
-module appServicePlan './app-service-plan.bicep' = {
-  name: 'app-service-plan'
-  params: {
-    name: appServicePlanName
-    location: location
-    tags: tags
-  }
-}
+// App Service Plan deshabilitado por cuota 0 vCPU en subscripción free trial.
+// Reemplazar con Plan de pago cuando se ajuste la cuota o se migre a EastUS 2
+// donde free trial a veces tiene cuota. module appServicePlan './app-service-plan.bicep' = { ... }
 
 module keyVault './key-vault.bicep' = {
   name: 'key-vault'
@@ -95,8 +90,10 @@ output storageAccountId string = storage.outputs.id
 output storageAccountName string = storage.outputs.name
 output storageAccountPrimaryBlobEndpoint string = storage.outputs.primaryBlobEndpoint
 
-output appServicePlanId string = appServicePlan.outputs.id
-output appServicePlanName string = appServicePlan.outputs.name
+// output appServicePlanId string = appServicePlan.outputs.id
+// output appServicePlanName string = appServicePlan.outputs.name
+output appServicePlanId string = ''
+output appServicePlanName string = ''
 
 output keyVaultId string = keyVault.outputs.id
 output keyVaultName string = keyVault.outputs.name

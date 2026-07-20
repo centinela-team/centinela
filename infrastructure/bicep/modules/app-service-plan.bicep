@@ -51,7 +51,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
     name: sku
     tier: sku == 'F1' ? 'Free' : (sku == 'B1' || sku == 'B2' ? 'Basic' : 'Standard')
   }
-  kind: osType == 'Linux' ? 'functionapp,linux' : 'app'
+  kind: osType == 'Linux' ? 'app,linux' : 'app'
   properties: {
     reserved: osType == 'Linux' ? true : false
     // F1 no soporta per-site scaling, instance count siempre 1

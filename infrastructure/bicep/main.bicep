@@ -45,31 +45,36 @@ var storageAccountName = take(toLower('${namePrefix}${environment}st'), 24)
 var keyVaultName = take(toLower('${namePrefix}-${environment}-kv'), 24)
 var appServicePlanName = take(toLower('${namePrefix}-${environment}-asp'), 40)
 var appInsightsName = take(toLower('${namePrefix}-${environment}-appi'), 260)
-var serviceBusNamespaceName = take(toLower('${namePrefix}-${environment}-sb'), 50)
+var serviceBusNamespaceName = take(toLower('${namePrefix}-${environment}-bus'), 50)
 var vnetName = take(toLower('${namePrefix}-${environment}-vnet'), 64)
 
-// ─── 1. RG a nivel subscription ─────────────────────────────────────────────
-module resourceGroup 'modules/resource-group.bicep' = {
-  name: 'resource-group'
-  params: {
-    name: resourceGroupName
-    location: location
-    tags: tags
-  }
+// App Service Plan TEMPORALMENTE deshabilitado (cuota 0 vCPU en esta sub free trial).
+// Se volverá a habilitar en sprint 2 al migrar a EastUS 2 o tras subir cuota.
+// Variable queda comentada para no perder referencia a nombre/recursos:
+// var appServicePlanName = take(toLower('${namePrefix}-${environment}-asp'), 40)
+
+// ─── 1. RG directamente como resource (scope: subscription en main.bicep) ──
+// Antes intentamos un módulo "resource-group" + then "scope: rgReference" para
+// invocar "infra-rg". Esto funcionaba en what-if pero fallaba en deploy real:
+// Azure intentaba aplicar infra-rg antes de que el RG existiera (BCP120 en
+// Bicep Linter + ResourceGroupNotFound en runtime).
+//
+// Fix: declarar el RG inline en main.bicep. Como main.bicep ya corre a
+// scope subscription, el RG se crea en este template y el "existing" usado
+// por infra-rg ya existe cuando Azure aplica el módulo siguiente.
+resource rg 'Microsoft.Resources/resourceGroups@2023-07-01' = {
+  name: resourceGroupName
+  location: location
+  tags: tags
 }
 
 // ─── 2. Todos los recursos PaaS dentro del RG ───────────────────────────────
-// Para que main.bicep (subscription) pueda invocar un módulo con
-// targetScope='resourceGroup', primero declara el recurso RG implícito como
-// extended resource del módulo. Forma recomendada por Microsoft docs.
-resource rgReference 'Microsoft.Resources/resourceGroups@2023-07-01' existing = {
-  name: resourceGroupName
-  scope: subscription()
-}
-
+// rg es ahora un resource declarado en el mismo template que main.bicep.
+// infra-rg hereda la dependencia simbólica por usar `scope: rg`, lo que
+// garantiza que Azure lo aplica DESPUÉS de que el RG haya sido creado.
 module infraRg 'modules/infra-rg.bicep' = {
   name: 'infra-rg'
-  scope: rgReference
+  scope: rg
   params: {
     vnetName: vnetName
     storageAccountName: storageAccountName
@@ -85,14 +90,14 @@ module infraRg 'modules/infra-rg.bicep' = {
 
 // ─── Outputs (trazabilidad) ─────────────────────────────────────────────────
 
-output resourceGroupId string = resourceGroup.outputs.id
-output resourceGroupName string = resourceGroup.outputs.name
+output resourceGroupId string = rg.id
+output resourceGroupName string = rg.name
 output vnetId string = infraRg.outputs.vnetId
 output storageAccountId string = infraRg.outputs.storageAccountId
 output storageAccountName string = infraRg.outputs.storageAccountName
 output storageAccountPrimaryBlobEndpoint string = infraRg.outputs.storageAccountPrimaryBlobEndpoint
-output appServicePlanId string = infraRg.outputs.appServicePlanId
-output appServicePlanName string = infraRg.outputs.appServicePlanName
+output appServicePlanId string = ''
+output appServicePlanName string = ''
 output keyVaultId string = infraRg.outputs.keyVaultId
 output keyVaultName string = infraRg.outputs.keyVaultName
 output keyVaultUri string = infraRg.outputs.keyVaultUri

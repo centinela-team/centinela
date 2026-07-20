@@ -42,7 +42,9 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enabledForTemplateDeployment: true   // para templates referenciados en deploys
     enableSoftDelete: true
     softDeleteRetentionInDays: 7
-    enablePurgeProtection: false        // vacío rápido por presupuesto
+    // AZURE requiere enablePurgeProtection=true en esta subscripción (2024+ policy).
+    // NO es opcional. Lo activamos y aceptamos la inmutabilidad de soft-delete para MVP.
+    enablePurgeProtection: true
     publicNetworkAccess: 'Enabled'     // sin Private Endpoints (fuera de alcance)
     networkAcls: {
       bypass: 'AzureServices'
