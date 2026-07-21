@@ -26,6 +26,9 @@ param tags object
 @description('Tenant ID de la suscripción')
 param tenantId string
 
+@description('Resource ID de la subnet snet-data para virtualNetworkRule. Si vacio, defaultAction queda Allow.')
+param subnetDataId string = ''
+
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: name
   location: location
@@ -45,12 +48,20 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     // AZURE requiere enablePurgeProtection=true en esta subscripción (2024+ policy).
     // NO es opcional. Lo activamos y aceptamos la inmutabilidad de soft-delete para MVP.
     enablePurgeProtection: true
-    publicNetworkAccess: 'Enabled'     // sin Private Endpoints (fuera de alcance)
+    publicNetworkAccess: 'Enabled'  // default; se controla via networkAcls
     networkAcls: {
-      bypass: 'AzureServices'
-      defaultAction: 'Allow'
+      bypass: 'AzureServices'  // diagnosticos PaaS
+      // Si subnetDataId esta presente, deny by default con la unica VNet
+      // rule apuntando a snet-data. Si está vacio (cuota 0 vCPU + sin
+      // Functions), queda Allow por compatibilidad sprint 1.
+      defaultAction: subnetDataId != '' ? 'Deny' : 'Allow'
       ipRules: []
-      virtualNetworkRules: []
+      virtualNetworkRules: subnetDataId != '' ? [
+        {
+          id: subnetDataId
+          ignoreMissingVnetServiceEndpoint: false
+        }
+      ] : []
     }
     accessPolicies: []                  // legacy: vacío, todo via RBAC
   }

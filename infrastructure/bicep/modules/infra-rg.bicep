@@ -63,6 +63,7 @@ module keyVault './key-vault.bicep' = {
     location: location
     tags: tags
     tenantId: tenantId
+    subnetDataId: vnet.outputs.subnetIdByName['snet-data']
   }
 }
 

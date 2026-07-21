@@ -131,3 +131,68 @@ info "RG_NAME exportado para apagado: $RG_NAME"
 echo "Para apagar:   RG_NAME=$RG_NAME ./infrastructure/scripts/azureundown.sh"
 echo "Para destruir: RG_NAME=$RG_NAME ./infrastructure/scripts/azureteardown.sh"
 echo "Persistencia: 'export RG_NAME=$RG_NAME' en tu shell antes de los scripts de apagado."
+
+
+# ─── 10. Verificar aislamiento de red (entregable #14 sprint 1) ─────────────────
+# El spec exige "datos no alcanzables desde internet". Aqui validamos
+# mediante az CLI + curl que la red esta configurada. Si falla, emitimos
+# warn (no exit 1) para que el operador revise pero el deploy no se cae.
+info "Verificando aislamiento de red (entregable #14 sprint 1)..."
+
+FAIL_ISO=0
+
+# 9a. snet-data serviceEndpoints tienen Storage, Sql, KeyVault
+SE_NAMES=$(az network vnet subnet show -n snet-data \
+  --vnet-name cnt-dev-vnet -g "$RG_NAME" \
+  --query "[properties.serviceEndpoints[].service][0]" -o tsv 2>/dev/null || echo "")
+if [[ "$SE_NAMES" == *"Microsoft.Storage"* ]] \
+   && [[ "$SE_NAMES" == *"Microsoft.Sql"* ]] \
+   && [[ "$SE_NAMES" == *"Microsoft.KeyVault"* ]]; then
+  info "  snet-data serviceEndpoints: Storage/Sql/KeyVault OK"
+else
+  warn "  snet-data SIN todos los serviceEndpoints (esperado Storage, Sql, KeyVault)"
+  FAIL_ISO=1
+fi
+
+# 9b. Storage defaultAction = Deny + VNet rule
+SA_NAME=$(grep -oE '"cnt[a-z0-9]+st"' "$PARAM_FILE" | head -1 | tr -d '"')
+: "${SA_NAME:=cntdevst}"
+SA_DA=$(az storage account show -n "$SA_NAME" -g "$RG_NAME" \
+  --query properties.networkRuleSet.defaultAction -o tsv 2>/dev/null || echo unknown)
+if [[ "$SA_DA" == "Deny" ]]; then
+  info "  storage $SA_NAME defaultAction = Deny OK"
+else
+  warn "  storage $SA_NAME defaultAction = '$SA_DA' (esperado: Deny)"
+  FAIL_ISO=1
+fi
+
+# 9c. Key Vault defaultAction = Deny
+KV_DA=$(az keyvault show -n cnt-dev-kv -g "$RG_NAME" \
+  --query properties.networkAcls.defaultAction -o tsv 2>/dev/null || echo missing)
+if [[ "$KV_DA" == "Deny" ]]; then
+  info "  keyvault cnt-dev-kv defaultAction = Deny OK"
+else
+  warn "  keyvault cnt-dev-kv defaultAction = '$KV_DA' (esperado: Deny)"
+  FAIL_ISO=1
+fi
+
+# 9d. Probes HTTP desde internet (esta terminal esta fuera del VNet)
+HTTP_SA=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
+  "https://${SA_NAME}.blob.core.windows.net/?comp=list" 2>/dev/null || echo 000)
+[[ "$HTTP_SA" == "403" ]] && info "  HTTPS probe ${SA_NAME}.blob -> 403 (esperado)" || {
+  warn "  HTTPS probe ${SA_NAME}.blob -> $HTTP_SA (esperado: 403)"
+  FAIL_ISO=1
+}
+
+HTTP_KV=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
+  "https://cnt-dev-kv.vault.azure.net/secrets/test?api-version=7.4" 2>/dev/null || echo 000)
+[[ "$HTTP_KV" == "401" ]] && info "  HTTPS probe cnt-dev-kv.vault -> 401 (esperado, aislado)" || {
+  warn "  HTTPS probe cnt-dev-kv.vault -> $HTTP_KV (esperado: 401)"
+  FAIL_ISO=1
+}
+
+if [[ "$FAIL_ISO" -eq 0 ]]; then
+  info "Aislamiento de red: PASS (todos los chequeos verde)."
+else
+  warn "Aislamiento de red: FAIL. El deploy NO se retracta. Revisar arriba."
+fi
