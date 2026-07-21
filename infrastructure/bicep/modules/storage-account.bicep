@@ -21,6 +21,9 @@ param location string
 @description('Tags')
 param tags object
 
+@description('Resource ID de la subnet snet-data para virtualNetworkRule. Si null, queda Allow.')
+param subnetDataId string = ''
+
 @description('Tier por defecto. Cool es más barato pero más lento en lectura.')
 @allowed([
   'Hot'
@@ -44,10 +47,17 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
     allowSharedKeyAccess: false
     minimumTlsVersion: 'TLS1_2'
     networkAcls: {
-      bypass: 'AzureServices'
-      defaultAction: 'Allow'  // Permitido por spec — no usamos Private Endpoints
+      bypass: 'AzureServices'      // bypass para diagnosticos PaaS (Log Analytics, Azure portal)
+      defaultAction: 'Deny'        // denegado por defecto; solo VNet rule permite trafico
       ipRules: []
-      virtualNetworkRules: []
+      // virtualNetworkRules solo se setean si se pasa el param subnetDataId.
+      // Si es null (cuota 0 vCPU que impide Functions), queda abierto hasta sprint 2.
+      virtualNetworkRules: subnetDataId != null ? [
+        {
+          id: subnetDataId
+          action: 'Allow'
+        }
+      ] : []
     }
     supportsHttpsTrafficOnly: true
     publicNetworkAccess: 'Enabled'

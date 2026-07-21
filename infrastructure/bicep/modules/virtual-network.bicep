@@ -66,7 +66,21 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
           addressPrefix: subnetPrefixes[2]
           privateEndpointNetworkPolicies: 'Disabled'
           privateLinkServiceNetworkPolicies: 'Enabled'
-          serviceEndpoints: []
+          // Service Endpoints gratis en Azure: enablean tráfico sobre
+          // backbone privado sin gateway on-prem. Combina con
+          // networkAcls.virtualNetworkRules en Storage/SQL/KV para
+          // cumplir el entregable #14 (datos no alcanzables desde internet).
+          serviceEndpoints: [
+            {
+              service: 'Microsoft.Storage'
+            }
+            {
+              service: 'Microsoft.Sql'
+            }
+            {
+              service: 'Microsoft.KeyVault'
+            }
+          ]
         }
       }
     ]
@@ -81,9 +95,16 @@ output id string = vnet.id
 @description('Nombre de la VNet')
 output name string = vnet.name
 
-@description('Array con los resource IDs de las 3 subredes')
+@description('Array con los resource IDs de las 3 subredes (en orden: apps, pe, data)')
 output subnetIds array = [
   vnet.properties.subnets[0].id
   vnet.properties.subnets[1].id
   vnet.properties.subnets[2].id
 ]
+
+@description('Mapa de subnet IDs por nombre, para acceso directo desde main sin importar orden')
+output subnetIdByName object = {
+  'snet-apps': vnet.properties.subnets[0].id
+  'snet-pe': vnet.properties.subnets[1].id
+  'snet-data': vnet.properties.subnets[2].id
+}

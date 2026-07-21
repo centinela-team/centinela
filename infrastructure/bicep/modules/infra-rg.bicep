@@ -48,6 +48,7 @@ module storage './storage-account.bicep' = {
     name: storageAccountName
     location: location
     tags: tags
+    subnetDataId: vnet.outputs.subnetIdByName['snet-data']
   }
 }
 
@@ -85,6 +86,8 @@ module serviceBus './service-bus.bicep' = {
 
 // ─── Outputs (consumidos por main.bicep) ─────────────────────────────────────
 output vnetId string = vnet.outputs.id
+output vnetSnetAppsId string = vnet.outputs.subnetIdByName['snet-apps']
+output vnetSnetDataId string = vnet.outputs.subnetIdByName['snet-data']
 
 output storageAccountId string = storage.outputs.id
 output storageAccountName string = storage.outputs.name
