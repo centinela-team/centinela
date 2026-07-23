@@ -141,7 +141,7 @@ La infraestructura será creada mediante Azure CLI e Infraestructura como Códig
 
 # 8. Documentos relacionados
 
-- azure-subscription.md
-- azure-services.md
-- naming-convention.md
-- deployment.md
+- azure_suscription.md
+- azure_services.md
+- azure_resource_standards.md
+- region_quota_verification.md
