@@ -33,6 +33,9 @@ param tags object
 ])
 param sku string = 'Standard'
 
+@description('Nombre funcional de la cola de ingesta')
+param ingestionQueueName string = 'transactions'
+
 resource serviceBus 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
   name: name
   location: location
@@ -49,6 +52,25 @@ resource serviceBus 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
   }
 }
 
+resource ingestionQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+  parent: serviceBus
+  name: ingestionQueueName
+  properties: {
+    deadLetteringOnMessageExpiration: true
+    defaultMessageTimeToLive: 'P14D'
+    duplicateDetectionHistoryTimeWindow: 'PT10M'
+    enableBatchedOperations: true
+    enableExpress: false
+    enablePartitioning: true
+    lockDuration: 'PT1M'
+    maxDeliveryCount: 5
+    maxSizeInMegabytes: 1024
+    requiresDuplicateDetection: true
+    requiresSession: false
+    status: 'Active'
+  }
+}
+
 @description('ID del namespace')
 output id string = serviceBus.id
 
@@ -60,3 +82,6 @@ output endpoint string = serviceBus.properties.serviceBusEndpoint
 
 @description('Resource ID (para referencias de queues/topics en otros bicep)')
 output resourceId string = serviceBus.id
+
+@description('Nombre de la cola de ingesta')
+output ingestionQueueName string = ingestionQueue.name
