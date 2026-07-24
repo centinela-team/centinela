@@ -1,18 +1,24 @@
 // =====================================================================
-// Centinela — Template principal (issue #36)
-// Nivel: subscription. Crea el RG y orquesta todos los recursos PaaS.
+// Centinela — Template principal
+// Nivel: resourceGroup. El RG se crea desde azuredeploy.sh con
+// `az group create` y luego se despliega con `az deployment group create`.
+// Esto requiere solo Contributor en el RG (no Owner en la suscripción),
+// que es el rol que tienen los colaboradores del equipo.
 //
 // region: eastus (overridable en parameters/dev.bicepparam)
-// meta: USD 60 sobre USD 200 presupuestados.
+// meta: máximo operativo USD 60 sobre USD 100 de crédito disponible.
 // Idempotente: re-aplicable con `--what-if` para diff.
 // =====================================================================
 
-targetScope = 'subscription'
+targetScope = 'resourceGroup'
 
+@description('Nombre estable del proyecto dentro de la convención Azure')
+param projectName string = 'centinela'
+
+@description('Sufijo numérico del Storage Account. Se usa para resolver unicidad global.')
 @minLength(2)
-@maxLength(6)
-@description('Prefijo para nombres de recursos')
-param namePrefix string = 'cnt'
+@maxLength(2)
+param storageInstance string = '02'
 
 @allowed([
   'dev'
@@ -22,14 +28,8 @@ param namePrefix string = 'cnt'
 @description('Entorno')
 param environment string = 'dev'
 
-@allowed([
-  'eastus'
-  'eastus2'
-  'centralus'
-  'westus2'
-])
-@description('Región primaria')
-param location string = 'eastus'
+@description('Región primaria. Por defecto la región del RG. Si la pasas desde CLI o .bicepparam, debe ser una de: eastus, eastus2, centralus, westus2.')
+param location string = resourceGroup().location
 
 @description('Tags comunes')
 param tags object = {
@@ -39,71 +39,89 @@ param tags object = {
   sprint: '2026-07'
 }
 
-// ─── Nombres derivados (inline var para evitar scope-cross) ──────────────────
-var resourceGroupName = take(toLower('rg-${namePrefix}-${environment}'), 90)
-var storageAccountName = take(toLower('${namePrefix}${environment}st'), 24)
-var keyVaultName = take(toLower('${namePrefix}-${environment}-kv'), 24)
-var appServicePlanName = take(toLower('${namePrefix}-${environment}-asp'), 40)
-var appInsightsName = take(toLower('${namePrefix}-${environment}-appi'), 260)
-var serviceBusNamespaceName = take(toLower('${namePrefix}-${environment}-bus'), 50)
-var vnetName = take(toLower('${namePrefix}-${environment}-vnet'), 64)
+// ─── Nombres derivados ─────────────────────────────────────────────────────
+var vnetName = take(toLower('vnet-${projectName}-${environment}'), 64)
+// Storage no admite guiones. stcentineladev01 estaba ocupado globalmente;
+// stcentineladev02 fue verificado disponible antes de esta adaptación.
+var storageAccountName = take(toLower('st${projectName}${environment}${storageInstance}'), 24)
+var keyVaultName = take(toLower('kv-${projectName}-${environment}'), 24)
+var appInsightsName = take(toLower('appi-${projectName}-${environment}'), 260)
+var logAnalyticsName = take(toLower('log-${projectName}-${environment}'), 63)
+var serviceBusNamespaceName = take(toLower('sb-${projectName}-${environment}'), 50)
 
-// App Service Plan TEMPORALMENTE deshabilitado (cuota 0 vCPU en esta sub free trial).
-// Se volverá a habilitar en sprint 2 al migrar a EastUS 2 o tras subir cuota.
-// Variable queda comentada para no perder referencia a nombre/recursos:
-// var appServicePlanName = take(toLower('${namePrefix}-${environment}-asp'), 40)
+@description('Tenant ID para Key Vault. Por defecto el del deployment.')
+param tenantId string = subscription().tenantId
 
-// ─── 1. RG directamente como resource (scope: subscription en main.bicep) ──
-// Antes intentamos un módulo "resource-group" + then "scope: rgReference" para
-// invocar "infra-rg". Esto funcionaba en what-if pero fallaba en deploy real:
-// Azure intentaba aplicar infra-rg antes de que el RG existiera (BCP120 en
-// Bicep Linter + ResourceGroupNotFound en runtime).
-//
-// Fix: declarar el RG inline en main.bicep. Como main.bicep ya corre a
-// scope subscription, el RG se crea en este template y el "existing" usado
-// por infra-rg ya existe cuando Azure aplica el módulo siguiente.
-resource rg 'Microsoft.Resources/resourceGroups@2023-07-01' = {
-  name: resourceGroupName
-  location: location
-  tags: tags
-}
-
-// ─── 2. Todos los recursos PaaS dentro del RG ───────────────────────────────
-// rg es ahora un resource declarado en el mismo template que main.bicep.
-// infra-rg hereda la dependencia simbólica por usar `scope: rg`, lo que
-// garantiza que Azure lo aplica DESPUÉS de que el RG haya sido creado.
-module infraRg 'modules/infra-rg.bicep' = {
-  name: 'infra-rg'
-  scope: rg
+// ─── Recursos PaaS ─────────────────────────────────────────────────────────
+module vnet './modules/virtual-network.bicep' = {
+  name: 'virtual-network'
   params: {
-    vnetName: vnetName
-    storageAccountName: storageAccountName
-    appServicePlanName: appServicePlanName
-    keyVaultName: keyVaultName
-    appInsightsName: appInsightsName
-    serviceBusNamespaceName: serviceBusNamespaceName
+    name: vnetName
     location: location
     tags: tags
-    tenantId: subscription().tenantId
+  }
+}
+
+module storage './modules/storage-account.bicep' = {
+  name: 'storage-account'
+  params: {
+    name: storageAccountName
+    location: location
+    tags: tags
+    subnetDataId: vnet.outputs.subnetIdByName['snet-apps']
+  }
+}
+
+// App Service Plan deshabilitado por cuota 0 vCPU en subscripción free trial.
+// Reemplazar con Plan de pago cuando se ajuste la cuota o se migre a EastUS 2.
+// module appServicePlan './modules/app-service-plan.bicep' = { ... }
+
+module keyVault './modules/key-vault.bicep' = {
+  name: 'key-vault'
+  params: {
+    name: keyVaultName
+    location: location
+    tags: tags
+    tenantId: tenantId
+    subnetDataId: vnet.outputs.subnetIdByName['snet-apps']
+  }
+}
+
+module appInsights './modules/application-insights.bicep' = {
+  name: 'application-insights'
+  params: {
+    name: appInsightsName
+    workspaceName: logAnalyticsName
+    location: location
+    tags: tags
+  }
+}
+
+module serviceBus './modules/service-bus.bicep' = {
+  name: 'service-bus'
+  params: {
+    name: serviceBusNamespaceName
+    location: location
+    tags: tags
   }
 }
 
 // ─── Outputs (trazabilidad) ─────────────────────────────────────────────────
-
-output resourceGroupId string = rg.id
-output resourceGroupName string = rg.name
-output vnetId string = infraRg.outputs.vnetId
-output storageAccountId string = infraRg.outputs.storageAccountId
-output storageAccountName string = infraRg.outputs.storageAccountName
-output storageAccountPrimaryBlobEndpoint string = infraRg.outputs.storageAccountPrimaryBlobEndpoint
+output vnetId string = vnet.outputs.id
+output vnetName string = vnet.outputs.name
+output storageAccountId string = storage.outputs.id
+output storageAccountName string = storage.outputs.name
+output storageAccountPrimaryBlobEndpoint string = storage.outputs.primaryBlobEndpoint
+output documentsContainerName string = storage.outputs.documentsContainerName
 output appServicePlanId string = ''
 output appServicePlanName string = ''
-output keyVaultId string = infraRg.outputs.keyVaultId
-output keyVaultName string = infraRg.outputs.keyVaultName
-output keyVaultUri string = infraRg.outputs.keyVaultUri
-output appInsightsId string = infraRg.outputs.appInsightsId
-output appInsightsName string = infraRg.outputs.appInsightsName
-output appInsightsConnectionString string = infraRg.outputs.appInsightsConnectionString
-output serviceBusId string = infraRg.outputs.serviceBusId
-output serviceBusNamespaceName string = infraRg.outputs.serviceBusNamespaceName
-output serviceBusEndpoint string = infraRg.outputs.serviceBusEndpoint
+output keyVaultId string = keyVault.outputs.id
+output keyVaultName string = keyVault.outputs.name
+output keyVaultUri string = keyVault.outputs.uri
+output appInsightsId string = appInsights.outputs.id
+output appInsightsName string = appInsights.outputs.name
+output appInsightsConnectionString string = appInsights.outputs.connectionString
+output serviceBusId string = serviceBus.outputs.id
+output serviceBusNamespaceName string = serviceBus.outputs.name
+output serviceBusEndpoint string = serviceBus.outputs.endpoint
+output ingestionQueueName string = serviceBus.outputs.ingestionQueueName

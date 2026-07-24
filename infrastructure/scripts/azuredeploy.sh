@@ -1,198 +1,208 @@
 #!/usr/bin/env bash
-# =====================================================================
-# azuredeploy.sh — Despliegue reproducible de Centinela desde cero
-# Issue: #37 (scripts de despliegue)
-# =====================================================================
-# Este script:
-#   1. Valida que 'az' CLI está instalado y autenticado (az login).
-#   2. Valida que la suscripción destino existe y tiene cuota suficiente.
-#   3. Valida el template Bicep localmente (bicep build).
-#   4. Ejecuta 'what-if' para mostrar diff antes de aplicar.
-#   5. Aplica con 'az deployment sub create'.
-#   6. Imprime outputs (IDs, endpoints) para uso downstream.
+# Despliegue reproducible de Centinela — issues #36/#37
 #
-# Re-ejecutable sin efectos colaterales (idempotente).
-# =====================================================================
+# Alcance: RG (no suscripción). Crea el Resource Group si no existe y luego
+# ejecuta `az deployment group create`. Esto requiere solo Contributor en el
+# RG, que es el rol que tienen los colaboradores del equipo.
 set -euo pipefail
 
-# ─── Defaults overridable por env var ────────────────────────────────────────
 LOCATION="${LOCATION:-eastus}"
+case "$LOCATION" in
+  eastus|eastus2|centralus|westus2) ;;
+  *) die "Región no soportada: '$LOCATION'. Usa eastus, eastus2, centralus o westus2." ;;
+esac
 DEPLOYMENT_NAME="${DEPLOYMENT_NAME:-centinela-base-$(date -u +%Y%m%d-%H%M%S)}"
 PARAM_FILE="${PARAM_FILE:-infrastructure/parameters/dev.bicepparam}"
 TEMPLATE_FILE="${TEMPLATE_FILE:-infrastructure/bicep/main.bicep}"
 
-# ─── Helpers ────────────────────────────────────────────────────────────────
-die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 warn() { echo "AVISO: $*" >&2; }
+die()  { echo "ERROR: $*" >&2; exit 1; }
 
-require_az() {
-  command -v az >/dev/null 2>&1 \
-    || die "'az' (Azure CLI) no encontrado. Instalar con: sudo pacman -S azure-cli
-Alternativa: usar Docker --rm -it mcr.microsoft.com/azure-cli"
-}
-
-require_bicep() {
-  command -v bicep >/dev/null 2>&1 \
-    || warn "'bicep' no en PATH. Usaré 'az bicep' (Azure CLI incluye Bicep)."
-  if ! az bicep version >/dev/null 2>&1; then
-    info "Instalando Bicep CLI via az..."
-    az bicep install
-  fi
-}
-
-require_login() {
-  if ! az account show >/dev/null 2>&1; then
-    die "No estás autenticado en Azure. Ejecuta primero:
-    az login
-    az account set --subscription <id>
-    Re-corre este script."
-  fi
-}
-
-# ─── 1. Pre-checks ──────────────────────────────────────────────────────────
-require_az
-require_bicep
-require_login
+command -v az >/dev/null 2>&1 || die "Azure CLI no está instalado."
+command -v git >/dev/null 2>&1 || die "git no está instalado."
+command -v curl >/dev/null 2>&1 || die "curl no está instalado."
+az account show >/dev/null 2>&1 || die "No autenticado. Ejecuta az login y selecciona la suscripción."
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT"
-info "Trabajando en: $REPO_ROOT"
-
 [[ -f "$TEMPLATE_FILE" ]] || die "Template no encontrado: $TEMPLATE_FILE"
-[[ -f "$PARAM_FILE"   ]] || die "Param file no encontrado: $PARAM_FILE"
+[[ -f "$PARAM_FILE" ]] || die "Parámetros no encontrados: $PARAM_FILE"
 
-# ─── 2. Validación Bicep local ──────────────────────────────────────────────
+# El nombre del RG se deriva de los parámetros; nunca elegimos otro RG por
+# accidente. Solo este RG será creado/modificado por el script.
+PROJECT_NAME="$(sed -n "s/^param projectName *= *'\([^']*\)'.*/\1/p" "$PARAM_FILE" | head -1)"
+ENVIRONMENT="$(sed -n "s/^param environment *= *'\([^']*\)'.*/\1/p" "$PARAM_FILE" | head -1)"
+[[ -n "$PROJECT_NAME" && -n "$ENVIRONMENT" ]] \
+  || die "No se pudieron leer projectName/environment desde $PARAM_FILE"
+EXPECTED_RG="rg-${PROJECT_NAME}-${ENVIRONMENT}"
+
+if az group show --name "$EXPECTED_RG" >/dev/null 2>&1; then
+  EXISTING_RG_LOCATION="$(az group show --name "$EXPECTED_RG" --query location -o tsv)"
+  [[ "$EXISTING_RG_LOCATION" == "$LOCATION" ]] \
+    || die "El RG existente '$EXPECTED_RG' está en '$EXISTING_RG_LOCATION', pero el despliegue pide '$LOCATION'."
+  EXISTING_COUNT="$(az resource list --resource-group "$EXPECTED_RG" --query 'length(@)' -o tsv)"
+  info "Reutilizando Resource Group existente: $EXPECTED_RG ($EXISTING_COUNT recursos, $EXISTING_RG_LOCATION)."
+else
+  info "Creando Resource Group '$EXPECTED_RG' en $LOCATION..."
+  TAGS_INLINE="project=$PROJECT_NAME environment=$ENVIRONMENT managedBy=azuredeploy"
+  az group create --name "$EXPECTED_RG" --location "$LOCATION" --tags "$TAGS_INLINE" >/dev/null
+fi
+
+if ! az bicep version >/dev/null 2>&1; then
+  info "Instalando Bicep CLI administrado por Azure CLI..."
+  az bicep install
+fi
+
 info "Validando Bicep localmente..."
-bicep build "$TEMPLATE_FILE" --stdout > /dev/null
+az bicep build --file "$TEMPLATE_FILE" --stdout >/dev/null
 
-# ─── 3. Validación de suscripción + cuota ──────────────────────────────────
 SUB_ID="$(az account show --query id -o tsv)"
 SUB_NAME="$(az account show --query name -o tsv)"
 info "Suscripción activa: $SUB_NAME ($SUB_ID)"
+info "Alcance del deployment: RG '$EXPECTED_RG' (no requiere rol a nivel de suscripción)."
 
-# Compute quota (Functions Consumption es intensivo)
-info "Verificando cuota de Compute/DSv3 family en $LOCATION..."
-QUOTA_DSV3=$(az vm list-usage --location "$LOCATION" \
-  --query "[?name.value=='DSv3Family'].currentValue" -o tsv 2>/dev/null || echo "0")
-QUOTA_DSV3_LIMIT=$(az vm list-usage --location "$LOCATION" \
-  --query "[?name.value=='DSv3Family'].limit" -o tsv 2>/dev/null || echo "0")
-info "  DSv3 family: $QUOTA_DSV3 / $QUOTA_DSV3_LIMIT vCPUs usadas"
+# ── Pre-flight: verificar resource providers necesarios ────────────────────
+# Si alguno no está Registered, el deploy fallará con MissingSubscriptionRegistration.
+# Requiere Contributor/Owner en la suscripción para registrar (no en el RG).
+REQUIRED_PROVIDERS=(
+  Microsoft.Network
+  Microsoft.Storage
+  Microsoft.KeyVault
+  Microsoft.OperationalInsights
+  Microsoft.Insights
+  Microsoft.ServiceBus
+)
+info "Verificando resource providers necesarios..."
+MISSING_PROVIDERS=()
+for ns in "${REQUIRED_PROVIDERS[@]}"; do
+  state="$(az provider show --namespace "$ns" --query registrationState -o tsv 2>/dev/null || echo "Unknown")"
+  if [[ "$state" != "Registered" ]]; then
+    MISSING_PROVIDERS+=("$ns ($state)")
+  fi
+done
 
-# ─── 4. what-if (preview) ───────────────────────────────────────────────────
-info "Ejecutando what-if (puede tardar 30-60s)..."
-if ! az deployment sub what-if \
-    --name "$DEPLOYMENT_NAME" \
-    --location "$LOCATION" \
-    --template-file "$TEMPLATE_FILE" \
-    --parameters "$PARAM_FILE"; then
-  die "what-if reportó cambios que necesitan revisión. Aborta."
+if [[ ${#MISSING_PROVIDERS[@]} -gt 0 ]]; then
+  echo
+  warn "Resource providers no registrados en la suscripción:"
+  for p in "${MISSING_PROVIDERS[@]}"; do
+    warn "  - $p"
+  done
+  echo
+  info "Intentando registrar los providers pendientes..."
+  REG_FAILED=()
+  for ns in "${REQUIRED_PROVIDERS[@]}"; do
+    state="$(az provider show --namespace "$ns" --query registrationState -o tsv 2>/dev/null || echo "Unknown")"
+    if [[ "$state" != "Registered" ]]; then
+      if az provider register --namespace "$ns" 2>/dev/null; then
+        info "  registro solicitado: $ns"
+      else
+        REG_FAILED+=("$ns")
+      fi
+    fi
+  done
+  if [[ ${#REG_FAILED[@]} -gt 0 ]]; then
+    echo
+    die "No se pudieron registrar: ${REG_FAILED[*]}. Esto requiere Owner/Contributor en la SUSCRIPCIÓN. Pide a un administrador que ejecute:
+    az provider register --namespace ${REG_FAILED[*]}
+y vuelva a correr este script cuando termine (los registros tardan 2-5 min en propagarse)."
+  fi
+  info "Esperando 30s a que los registros se propaguen..."
+  sleep 30
+  for ns in "${REQUIRED_PROVIDERS[@]}"; do
+    state="$(az provider show --namespace "$ns" --query registrationState -o tsv 2>/dev/null || echo "Unknown")"
+    if [[ "$state" != "Registered" ]]; then
+      die "El provider '$ns' sigue en estado '$state' tras 30s. Vuelve a correr el script en 2-5 minutos."
+    fi
+  done
+  info "Todos los providers requeridos están Registered."
 fi
 
-# ─── 5. Confirmación interactiva ────────────────────────────────────────────
-echo
-echo "About to deploy:"
-echo "  Template:    $TEMPLATE_FILE"
-echo "  Parameters:  $PARAM_FILE"
-echo "  Location:    $LOCATION"
-echo "  Deployment:  $DEPLOYMENT_NAME"
-echo "  Subscription: $SUB_NAME ($SUB_ID)"
-echo
-read -p "¿Aplicar (s/N)? " -n 1 -r
-echo
-[[ "$REPLY" =~ ^[Ss]$ ]] || { warn "Abortado por el usuario."; exit 1; }
-
-# ─── 6. Apply ───────────────────────────────────────────────────────────────
-info "Desplegando (esto puede tardar varios minutos)..."
-az deployment sub create \
+info "Ejecutando what-if..."
+az deployment group what-if \
+  --resource-group "$EXPECTED_RG" \
   --name "$DEPLOYMENT_NAME" \
-  --location "$LOCATION" \
   --template-file "$TEMPLATE_FILE" \
   --parameters "$PARAM_FILE"
 
-# ─── 7. Outputs (trazabilidad) ──────────────────────────────────────────────
-info "Outputs del despliegue:"
-az deployment sub show \
+echo
+echo "Template:     $TEMPLATE_FILE"
+echo "Parámetros:   $PARAM_FILE"
+echo "RG:           $EXPECTED_RG ($LOCATION)"
+echo "Deployment:   $DEPLOYMENT_NAME"
+echo "Suscripción:  $SUB_NAME ($SUB_ID)"
+read -r -p "¿Aplicar (s/N)? " REPLY
+[[ "$REPLY" =~ ^[Ss]$ ]] || { warn "Abortado por el usuario."; exit 1; }
+
+info "Desplegando..."
+az deployment group create \
+  --resource-group "$EXPECTED_RG" \
   --name "$DEPLOYMENT_NAME" \
-  --query "properties.outputs" \
-  --output table
+  --template-file "$TEMPLATE_FILE" \
+  --parameters "$PARAM_FILE"
 
-# ─── 8. Mensaje final ───────────────────────────────────────────────────────
-info "Despliegue completo. Para apagado de fin de jornada: infrastructure/scripts/azureundown.sh"
-
-# ─── 9. Exportar RG_NAME para azureundown.sh / azureteardown.sh ──────────────
-# Sin esto, los scripts de apagado apuntan al default rg-cnt-dev aunque el
-# operador haya re-desplegado con environment=stg/prd → borra el equivocado.
-NAME_PREFIX=$(grep -E "^param namePrefix " "$PARAM_FILE" | sed -E "s/.*'([^']+)'.*/\1/")
-ENVIRONMENT=$(grep -E "^param environment " "$PARAM_FILE" | sed -E "s/.*'([^']+)'.*/\1/")
-RG_NAME="rg-${NAME_PREFIX}-${ENVIRONMENT}"
-export RG_NAME
-info "RG_NAME exportado para apagado: $RG_NAME"
-echo "Para apagar:   RG_NAME=$RG_NAME ./infrastructure/scripts/azureundown.sh"
-echo "Para destruir: RG_NAME=$RG_NAME ./infrastructure/scripts/azureteardown.sh"
-echo "Persistencia: 'export RG_NAME=$RG_NAME' en tu shell antes de los scripts de apagado."
-
-
-# ─── 10. Verificar aislamiento de red (entregable #14 sprint 1) ─────────────────
-# El spec exige "datos no alcanzables desde internet". Aqui validamos
-# mediante az CLI + curl que la red esta configurada. Si falla, emitimos
-# warn (no exit 1) para que el operador revise pero el deploy no se cae.
-info "Verificando aislamiento de red (entregable #14 sprint 1)..."
-
-FAIL_ISO=0
-
-# 9a. snet-data serviceEndpoints tienen Storage, Sql, KeyVault
-SE_NAMES=$(az network vnet subnet show -n snet-data \
-  --vnet-name cnt-dev-vnet -g "$RG_NAME" \
-  --query "[properties.serviceEndpoints[].service][0]" -o tsv 2>/dev/null || echo "")
-if [[ "$SE_NAMES" == *"Microsoft.Storage"* ]] \
-   && [[ "$SE_NAMES" == *"Microsoft.Sql"* ]] \
-   && [[ "$SE_NAMES" == *"Microsoft.KeyVault"* ]]; then
-  info "  snet-data serviceEndpoints: Storage/Sql/KeyVault OK"
-else
-  warn "  snet-data SIN todos los serviceEndpoints (esperado Storage, Sql, KeyVault)"
-  FAIL_ISO=1
-fi
-
-# 9b. Storage defaultAction = Deny + VNet rule
-SA_NAME=$(grep -oE '"cnt[a-z0-9]+st"' "$PARAM_FILE" | head -1 | tr -d '"')
-: "${SA_NAME:=cntdevst}"
-SA_DA=$(az storage account show -n "$SA_NAME" -g "$RG_NAME" \
-  --query properties.networkRuleSet.defaultAction -o tsv 2>/dev/null || echo unknown)
-if [[ "$SA_DA" == "Deny" ]]; then
-  info "  storage $SA_NAME defaultAction = Deny OK"
-else
-  warn "  storage $SA_NAME defaultAction = '$SA_DA' (esperado: Deny)"
-  FAIL_ISO=1
-fi
-
-# 9c. Key Vault defaultAction = Deny
-KV_DA=$(az keyvault show -n cnt-dev-kv -g "$RG_NAME" \
-  --query properties.networkAcls.defaultAction -o tsv 2>/dev/null || echo missing)
-if [[ "$KV_DA" == "Deny" ]]; then
-  info "  keyvault cnt-dev-kv defaultAction = Deny OK"
-else
-  warn "  keyvault cnt-dev-kv defaultAction = '$KV_DA' (esperado: Deny)"
-  FAIL_ISO=1
-fi
-
-# 9d. Probes HTTP desde internet (esta terminal esta fuera del VNet)
-HTTP_SA=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
-  "https://${SA_NAME}.blob.core.windows.net/?comp=list" 2>/dev/null || echo 000)
-[[ "$HTTP_SA" == "403" ]] && info "  HTTPS probe ${SA_NAME}.blob -> 403 (esperado)" || {
-  warn "  HTTPS probe ${SA_NAME}.blob -> $HTTP_SA (esperado: 403)"
-  FAIL_ISO=1
+# Outputs del deployment. El nombre del RG y de la suscripción los conocemos
+# de antemano; aquí solo leemos los recursos desplegados.
+output() {
+  az deployment group show --resource-group "$EXPECTED_RG" --name "$DEPLOYMENT_NAME" \
+    --query "properties.outputs.$1.value" -o tsv
 }
 
-HTTP_KV=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
-  "https://cnt-dev-kv.vault.azure.net/secrets/test?api-version=7.4" 2>/dev/null || echo 000)
-[[ "$HTTP_KV" == "401" ]] && info "  HTTPS probe cnt-dev-kv.vault -> 401 (esperado, aislado)" || {
-  warn "  HTTPS probe cnt-dev-kv.vault -> $HTTP_KV (esperado: 401)"
-  FAIL_ISO=1
-}
+VNET_NAME="$(output vnetName)"
+SA_NAME="$(output storageAccountName)"
+KV_NAME="$(output keyVaultName)"
+SB_NAME="$(output serviceBusNamespaceName)"
+QUEUE_NAME="$(output ingestionQueueName)"
+CONTAINER_NAME="$(output documentsContainerName)"
 
-if [[ "$FAIL_ISO" -eq 0 ]]; then
-  info "Aislamiento de red: PASS (todos los chequeos verde)."
+for pair in \
+  "VNET_NAME:$VNET_NAME" "SA_NAME:$SA_NAME" "KV_NAME:$KV_NAME" \
+  "SB_NAME:$SB_NAME" "QUEUE_NAME:$QUEUE_NAME" "CONTAINER_NAME:$CONTAINER_NAME"; do
+  [[ -n "${pair#*:}" ]] || die "Output vacío: ${pair%%:*}"
+done
+
+info "Recursos desplegados:"
+printf '  RG=%s\n  VNet=%s\n  Storage=%s\n  Container=%s\n  KeyVault=%s\n  ServiceBus=%s\n  Queue=%s\n' \
+  "$EXPECTED_RG" "$VNET_NAME" "$SA_NAME" "$CONTAINER_NAME" "$KV_NAME" "$SB_NAME" "$QUEUE_NAME"
+
+FAIL=0
+info "Verificando aislamiento y entregables de Semana 1..."
+SE_NAMES="$(az network vnet subnet show -n snet-apps --vnet-name "$VNET_NAME" -g "$EXPECTED_RG" \
+  --query 'serviceEndpoints[].service' -o tsv 2>/dev/null || true)"
+for endpoint in Microsoft.Storage Microsoft.Sql Microsoft.KeyVault; do
+  [[ "$SE_NAMES" == *"$endpoint"* ]] || { warn "snet-apps no tiene $endpoint"; FAIL=1; }
+done
+
+SA_DA="$(az storage account show -n "$SA_NAME" -g "$EXPECTED_RG" \
+  --query networkRuleSet.defaultAction -o tsv 2>/dev/null || echo missing)"
+[[ "$SA_DA" == "Deny" ]] || { warn "Storage defaultAction=$SA_DA; esperado Deny"; FAIL=1; }
+
+KV_DA="$(az keyvault show -n "$KV_NAME" -g "$EXPECTED_RG" \
+  --query properties.networkAcls.defaultAction -o tsv 2>/dev/null || echo missing)"
+[[ "$KV_DA" == "Deny" ]] || { warn "Key Vault defaultAction=$KV_DA; esperado Deny"; FAIL=1; }
+
+PUBLIC_ACCESS="$(az storage container show --name "$CONTAINER_NAME" --account-name "$SA_NAME" \
+  --auth-mode login --query properties.publicAccess -o tsv 2>/dev/null || true)"
+[[ -z "$PUBLIC_ACCESS" || "$PUBLIC_ACCESS" == "None" ]] \
+  || { warn "Contenedor publicAccess=$PUBLIC_ACCESS; esperado None"; FAIL=1; }
+
+QUEUE_STATUS="$(az servicebus queue show -g "$EXPECTED_RG" --namespace-name "$SB_NAME" \
+  --name "$QUEUE_NAME" --query status -o tsv 2>/dev/null || echo missing)"
+[[ "$QUEUE_STATUS" == "Active" ]] || { warn "Cola status=$QUEUE_STATUS; esperado Active"; FAIL=1; }
+
+HTTP_SA="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
+  "https://${SA_NAME}.blob.core.windows.net/?comp=list" 2>/dev/null || echo 000)"
+[[ "$HTTP_SA" == "403" ]] || { warn "Storage externo devolvió $HTTP_SA; esperado 403"; FAIL=1; }
+
+if [[ "$FAIL" -eq 0 ]]; then
+  info "Verificación post-deploy: PASS"
 else
-  warn "Aislamiento de red: FAIL. El deploy NO se retracta. Revisar arriba."
+  die "Verificación post-deploy: FAIL. No se revierte automáticamente; revisa la salida."
 fi
+
+cat <<EOF
+Para apagado diario:
+  RG_NAME=$EXPECTED_RG bash infrastructure/scripts/azureundown.sh
+Para teardown destructivo:
+  RG_NAME=$EXPECTED_RG bash infrastructure/scripts/azureteardown.sh
+EOF

@@ -67,3 +67,7 @@ env/
 *.tfplan
 crash.log
 .terraformrc
+
+# Local review / tooling / agent working dirs (never committed)
+.opencode/
+.review/
