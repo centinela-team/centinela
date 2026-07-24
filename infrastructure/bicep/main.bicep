@@ -40,14 +40,17 @@ param tags object = {
 }
 
 // ─── Nombres derivados ─────────────────────────────────────────────────────
-var vnetName = take(toLower('vnet-${projectName}-${environment}'), 64)
-// Storage no admite guiones. stcentineladev01 estaba ocupado globalmente;
-// stcentineladev02 fue verificado disponible antes de esta adaptación.
-var storageAccountName = take(toLower('st${projectName}${environment}${storageInstance}'), 24)
-var keyVaultName = take(toLower('kv-${projectName}-${environment}'), 24)
-var appInsightsName = take(toLower('appi-${projectName}-${environment}'), 260)
-var logAnalyticsName = take(toLower('log-${projectName}-${environment}'), 63)
-var serviceBusNamespaceName = take(toLower('sb-${projectName}-${environment}'), 50)
+// uniqueString genera un hash determinístico por suscripción+RG+timestamp.
+// Lo usamos como sufijo para que cada deploy sea globalmente único y no
+// choque con nombres reservados (sb-centinela-dev, kv-centinela-dev, etc.).
+var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id, deployment().name)
+var vnetName = take(toLower('vnet-${projectName}-${environment}-${uniqueSuffix}'), 64)
+// Storage no admite guiones. Concatenamos sin guiones, máximo 24 chars.
+var storageAccountName = take(toLower('st${projectName}${environment}${storageInstance}${uniqueSuffix}'), 24)
+var keyVaultName = take(toLower('kv-${projectName}-${environment}-${uniqueSuffix}'), 24)
+var appInsightsName = take(toLower('appi-${projectName}-${environment}-${uniqueSuffix}'), 260)
+var logAnalyticsName = take(toLower('log-${projectName}-${environment}-${uniqueSuffix}'), 63)
+var serviceBusNamespaceName = take(toLower('sb-${projectName}-${environment}-${uniqueSuffix}'), 50)
 
 @description('Tenant ID para Key Vault. Por defecto el del deployment.')
 param tenantId string = subscription().tenantId
