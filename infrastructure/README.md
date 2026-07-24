@@ -15,7 +15,8 @@ Esta carpeta contiene la infraestructura como código (IaC) reproducible de **Ce
   ```
 
 - Una suscripción Azure con crédito activo y presupuesto suficiente.
-- Permisos **Owner** sobre la suscripción destino.
+- **Permisos Contributor** (o superiores) sobre el Resource Group `rg-centinela-dev`. El script `azuredeploy.sh` corre a nivel de RG con `az deployment group create`, por lo que **NO se requiere Owner de la suscripción** para el path feliz.
+- **Excepción — pre-flight de resource providers:** Si los namespaces `Microsoft.Network`, `Microsoft.Storage`, `Microsoft.KeyVault`, `Microsoft.OperationalInsights`, `Microsoft.Insights` o `Microsoft.ServiceBus` no están `Registered` en la suscripción, el script intentará registrarlos automáticamente. Esa acción requiere permisos a nivel de suscripción (`Microsoft.*/register/action`). Si el script falla con `AuthorizationFailed` en el pre-flight, **un Owner de la suscripción debe correr UNA SOLA VEZ** los comandos `az provider register --namespace ...` listados en el error (los registros tardan 2-5 min en propagarse).
 - Bash y acceso a este repositorio. Los comandos de despliegue deben ejecutarse desde su raíz.
 
 ## Estructura
@@ -23,26 +24,25 @@ Esta carpeta contiene la infraestructura como código (IaC) reproducible de **Ce
 ```text
 infrastructure/
 ├── bicep/
-│   ├── main.bicep
+│   ├── main.bicep              # targetScope = 'resourceGroup', orquesta los modulos hoja
 │   └── modules/
 │       ├── application-insights.bicep
-│       ├── app-service-plan.bicep
-│       ├── infra-rg.bicep
+│       ├── app-service-plan.bicep   # (comentado: bloqueado por cuota 0 vCPU)
 │       ├── key-vault.bicep
-│       ├── resource-group.bicep
 │       ├── service-bus.bicep
 │       ├── storage-account.bicep
 │       └── virtual-network.bicep
 ├── scripts/
-│   ├── azuredeploy.sh
+│   ├── azuredeploy.sh          # Crea RG si no existe + deployment group + pre-flight providers
 │   ├── azureundown.sh
 │   └── azureteardown.sh
 ├── parameters/
 │   └── dev.bicepparam
-└── monitoring/
+└── monitoring/                  # (reservado, vacio por ahora)
 ```
 
-`diagrams/` contiene los diagramas de arquitectura; `monitoring/` queda reservado para configuración adicional de observabilidad.
+- `docs/architecture/architecture.md` documenta la arquitectura adaptada, lo implementado y los bloqueos reales.
+- `diagrams/` queda reservado para una futura exportación visual alineada con `docs/architecture/architecture.md`; el diagrama existente vive en la rama documental.
 
 ## Despliegue paso a paso
 
@@ -62,15 +62,18 @@ Ejecutar desde `/home/luky/Documents/centinela` (la raíz del repositorio):
    az account show --output table
    ```
 
-   Confirma que la cuenta seleccionada tiene crédito activo y que tu identidad tiene permisos **Owner** sobre ella.
+   Confirma que la cuenta seleccionada tiene crédito activo y que tu identidad tiene permisos **Contributor** (o superiores) sobre el Resource Group `rg-centinela-dev`.
 
-3. **Revisar el cambio antes de aplicarlo** con `what-if`:
+3. **Revisar el cambio antes de aplicarlo** con `what-if` (lo hace el propio script, pero puedes correrlo suelto para inspección):
 
    ```bash
-   az deployment sub what-if --template-file infrastructure/bicep/main.bicep --parameters infrastructure/parameters/dev.bicepparam
+   az deployment group what-if \
+     --resource-group rg-centinela-dev \
+     --template-file infrastructure/bicep/main.bicep \
+     --parameters infrastructure/parameters/dev.bicepparam
    ```
 
-   El entorno por defecto es `dev` en `eastus`, con nombres como `rg-cnt-dev`, `cntdevst`, `cnt-dev-sb` y `cnt-dev-appi`.
+   El entorno por defecto es `dev` en `eastus`, con `rg-centinela-dev`, `stcentineladev02`, `sb-centinela-dev`, `kv-centinela-dev`, `appi-centinela-dev`, `log-centinela-dev` y `vnet-centinela-dev`. La convención completa está en `docs/sprint/semana1/convencion-nombres.md`.
 
 4. **Ejecutar el despliegue reproducible:**
 
@@ -86,22 +89,30 @@ Con la misma suscripción activa, comprobar cada recurso esperado:
 
 ```bash
 # Resource Group
-az group show -n rg-cnt-dev
+az group show -n rg-centinela-dev
 
 # Storage Account
-az storage account show -n cntdevst
+az storage account show -n stcentineladev02
 
-# Service Bus namespace
-az servicebus namespace show -n cnt-dev-sb
+# App Service Plan / Function App
+# Bloqueados hasta registrar Microsoft.Web y validar un tier con VNet Integration.
+# No se afirman como desplegados en Semana 1.
+
+# Key Vault
+az keyvault show -n kv-centinela-dev -g rg-centinela-dev
+
+# Service Bus namespace + cola
+az servicebus namespace show -n sb-centinela-dev -g rg-centinela-dev
+az servicebus queue show -g rg-centinela-dev --namespace-name sb-centinela-dev -n transactions
 
 # Application Insights
-az monitor app-insights component show -n cnt-dev-appi
+az monitor app-insights component show -n appi-centinela-dev -g rg-centinela-dev
 ```
 
 Cada comando debe devolver un recurso existente en la suscripción seleccionada. Para una vista general adicional:
 
 ```bash
-az resource list -g rg-cnt-dev --output table
+az resource list -g rg-centinela-dev --output table
 ```
 
 ## Apagado de fin de jornada
@@ -115,7 +126,7 @@ bash infrastructure/scripts/azureundown.sh
 Úsalo al terminar la jornada o durante una pausa prolongada del desarrollo. El script detiene las Function Apps y Web Apps del resource group, pero deja activos Storage, Service Bus y SQL para conservar datos y mensajería. Service Bus no se pausa porque debe poder procesar backlog; SQL también permanece activo. Para reanudar una Function App:
 
 ```bash
-az functionapp start -g rg-cnt-dev -n <FUNCTION_APP_NAME>
+az functionapp start -g rg-centinela-dev -n <FUNCTION_APP_NAME>
 ```
 
 ## Apagado total (fin de sprint)
@@ -133,7 +144,7 @@ Este script muestra primero los recursos y exige **dos confirmaciones interactiv
 - La plantilla es idempotente: se puede volver a aplicar con los mismos parámetros sin recrear los recursos. Azure calcula el estado deseado y deja sin cambios lo que ya coincide.
 - Es recomendable ejecutar `what-if` antes de cada re-aplicación para revisar diferencias.
 - Cambiar propiedades compatibles (por ejemplo, tags o configuración permitida por el SKU) actualiza el recurso existente; no implica automáticamente un `recreate`.
-- Cambiar `namePrefix` o `environment` cambia los nombres derivados (`rg-<prefix>-<environment>`, Storage, Key Vault, App Service Plan, App Insights, Service Bus y VNet) y **crea recursos nuevos**. No es un cambio de entorno in-place.
+- Cambiar `projectName`, `environment` o `storageInstance` cambia los nombres derivados y **crea recursos nuevos**. No es un cambio de entorno in-place.
 - Los nombres de Storage Account son globalmente únicos. Si se cambia el nombre, el despliegue intentará crear otra cuenta; verifica previamente disponibilidad y datos.
 
 ## Costes esperados
@@ -155,7 +166,7 @@ Estimación para **21 días**, región **eastus**, según `docs/architecture/dec
 | Blob Storage | LRS Hot (10 GB) | $0.21 |
 | **Total estimado del sprint** | **eastus / 21 días** | **$17.38** |
 
-La meta de coste del sprint es aproximadamente **USD 60**, frente a **USD 200 presupuestados**; el apagado nocturno reduce el consumo de cómputo cuando existan Function Apps o Web Apps desplegadas.
+La meta de coste del sprint es aproximadamente **USD 60**, frente a **USD 100 de crédito disponible**; el apagado nocturno reduce el consumo de cómputo cuando existan Function Apps o Web Apps desplegadas.
 
 ## Troubleshooting
 
@@ -181,7 +192,10 @@ param location = 'westus2'
 Después ejecuta de nuevo:
 
 ```bash
-az deployment sub what-if --template-file infrastructure/bicep/main.bicep --parameters infrastructure/parameters/dev.bicepparam
+az deployment group what-if \
+  --resource-group rg-centinela-dev \
+  --template-file infrastructure/bicep/main.bicep \
+  --parameters infrastructure/parameters/dev.bicepparam
 bash infrastructure/scripts/azuredeploy.sh
 ```
 

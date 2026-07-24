@@ -108,7 +108,7 @@ secciones), identificados como `ADR-001` a `ADR-004`.
 #### Contexto
 
 El proyecto corre sobre una suscripción gratuita de Azure recién creada
-(USD 200, 30 días). Cualquier región que elijamos debe cumplir:
+(USD 100, 30 días). Cualquier región que elijamos debe cumplir:
 
 1. Tener cuota disponible para los servicios críticos: Cosmos DB
    Serverless, Service Bus Standard, Azure SQL Basic, Functions
@@ -155,12 +155,14 @@ Desplegar Centinela en la región **`eastus`** (este de EE. UU.).
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptado |
+| **Estado** | **Superseded por ADR-005 (2026-07-24)** |
 | **Fecha** | 2026-07-20 |
 | **Decisor** | jpgcano |
 | **Supersede a** | — |
 
-#### Contexto
+> **Nota (2026-07-24):** Esta ADR describía el diseño previo, con `main.bicep` corriendo a scope `subscription` y un módulo `infra-rg.bicep` orquestando los PaaS. **El diseño vigente es el del ADR-005** — `main.bicep` corre a scope `resourceGroup` y el RG lo crea `azuredeploy.sh` con `az group create`. Las dos secciones siguientes (Contexto, Decisión, Consecuencias, Referencias) se conservan como histórico.
+
+#### Contexto (histórico, Superseded)
 
 Inicialmente se intentó tener un módulo `resource-group` separado del
 módulo de recursos PaaS, invocados en cadena desde `main.bicep` (scope:
@@ -168,18 +170,22 @@ subscription). El **what-if** funcionaba, pero el **deploy real** fallaba
 con `BCP120` y `ResourceGroupNotFound` porque Azure intentaba aplicar el
 módulo PaaS antes de que el RG existiera.
 
-#### Decisión
+#### Decisión histórica (Superseded)
 
-Adoptar la siguiente estructura:
+Adoptar la siguiente estructura (ya NO vigente):
 
 1. `main.bicep` corre con `targetScope = 'subscription'` y declara el
    Resource Group como recurso **inline** (no módulo).
 2. Un único módulo `modules/infra-rg.bicep` con `targetScope =
    'resourceGroup'` orquesta los PaaS.
-3. Los módulos hijos (storage, key-vault, service-bus, vnet, appinsights)
-   son Hojas que reciben parámetros desde el orquestador.
+3. Los módulos hijos (storage, key-vault, service-bus, vnet y appinsights)
+   son hojas que reciben parámetros desde el orquestador.
+4. La convención canónica es `<tipo>-centinela-<ambiente>`; Storage concatena
+   sin guiones y usa `storageInstance` para resolver unicidad global.
+5. Los nombres vigentes se documentan en `convencion-nombres.md`; el código
+   antiguo `cnt` queda reemplazado sin cambiar la topología.
 
-#### Consecuencias
+#### Consecuencias (histórico)
 
 - **Positivas**:
   - El RG existe antes de que Azure aplique los módulos PaaS, eliminando
@@ -197,12 +203,68 @@ Adoptar la siguiente estructura:
   - Si en sprint futuro se requiere múltiples RGs (p. ej. `rg-data`,
     `rg-compute`), refactorizar a un módulo `rg-factory.bicep`.
 
-#### Referencias
+#### Referencias (histórico)
 
 - `infrastructure/bicep/main.bicep`.
-- `infrastructure/bicep/modules/infra-rg.bicep`.
+- `infrastructure/bicep/modules/infra-rg.bicep` *(eliminado 2026-07-24)*.
 - `infrastructure/bicep/modules/*.bicep`.
 - [Bicep modules documentation](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/modules).
+
+---
+
+### ADR-005 — Refactor a scope `resourceGroup` para desbloquear el despliegue con permisos limitados
+
+| Campo | Valor |
+|---|---|
+| **Estado** | Aceptado |
+| **Fecha** | 2026-07-24 |
+| **Decisor** | jpgcano |
+| **Supersede a** | ADR-002 |
+
+#### Contexto
+
+El diseño de la ADR-002 requería que el usuario tuviera permisos a nivel de **suscripción** para ejecutar `az deployment sub create` y para registrar resource providers. En la práctica, el equipo tiene únicamente **Contributor sobre `rg-centinela-dev`** (no Owner ni Contributor sobre la suscripción). Esto bloqueó el despliegue en Sprint 1 con dos errores distintos:
+
+1. `MissingSubscriptionRegistration` para `Microsoft.Network`, `Microsoft.ServiceBus`, `Microsoft.OperationalInsights`, `Microsoft.Insights` (porque Azure for Students no pre-registra los namespaces al alta).
+2. `AuthorizationFailed` al intentar `az provider register` desde una cuenta sin permisos de suscripción.
+
+El script `azuredeploy.sh` era ejecutable, pero solo parcialmente: llegaba al `what-if`, mostraba el plan de 10 recursos, y moría en el `create` con el primer error.
+
+#### Decisión
+
+Refactorizar la IaC a **scope `resourceGroup`**, separando la responsabilidad del RG del template Bicep:
+
+1. `main.bicep` corre con `targetScope = 'resourceGroup'` y orquesta los PaaS (no declara el RG).
+2. El Resource Group `rg-centinela-dev` lo crea `azuredeploy.sh` con `az group create --tags ...` la primera vez; en despliegues posteriores lo reutiliza.
+3. `azuredeploy.sh` cambia `az deployment sub what-if/create` → `az deployment group what-if/create --resource-group rg-centinela-dev`.
+4. Se añade un **pre-flight de resource providers** en el script que detecta los 6 namespaces necesarios antes del `what-if`. Si el usuario tiene permisos de suscripción, intenta el registro automático. Si no, aborta con un mensaje claro listando los comandos exactos que un Owner de la suscripción debe correr.
+5. Se elimina el módulo `infra-rg.bicep` (su contenido se absorbe en `main.bicep`, que ahora no necesita ese nivel de indirección).
+6. Se elimina la carpeta `infrastructure/portal/` y `docs/architecture/despliegue-portal.md` (eran workarounds para sortear el problema de scope; ya no son necesarios).
+7. Se eliminan los archivos de costos del equipo de otra célula (`informe-cuotas.md`, `reporte-credito.md`) del working tree de IaC.
+
+Con estos cambios, **Contributor sobre `rg-centinela-dev` es suficiente para ejecutar el path feliz completo** (crear RG, validar providers, what-if, apply, verificar aislamiento). La única acción externa que requiere Owner de suscripción es el registro inicial de los 6 namespaces, que el script guía paso a paso cuando falla.
+
+#### Consecuencias
+
+- **Positivas**:
+  - El equipo puede ejecutar el 100% del despliegue con el rol que ya tiene.
+  - El pre-flight evita perder 10-15 minutos en un deploy que se sabe que va a fallar.
+  - El RG vive en el script (no en Bicep), lo que permite que un mismo template se aplique sobre RGs distintos cambiando `az group create` (multi-RG queda viable en sprint futuro).
+- **Negativas / trade-offs**:
+  - Pierde la atomicidad "RG + recursos en una sola transacción ARM". Si `az group create` tiene éxito pero `az deployment group create` falla, queda un RG vacío. El script lo documenta en su cabecera.
+  - El pre-flight introduce un acoplamiento implícito: si el equipo añade un nuevo tipo de recurso PaaS que requiere un namespace nuevo, hay que añadir ese namespace a `REQUIRED_PROVIDERS` en el script.
+- **Migración**:
+  - No requiere migración de recursos ya desplegados (no había despliegues previos en `rg-centinela-dev`).
+  - Documentado en `docs/sprint/semana1/incidentes-y-lecciones.md` sección 1.
+
+#### Referencias
+
+- `infrastructure/bicep/main.bicep` (targetScope = 'resourceGroup').
+- `infrastructure/scripts/azuredeploy.sh` (az group create + az deployment group + pre-flight).
+- `infrastructure/parameters/dev.bicepparam`.
+- `docs/sprint/semana1/incidentes-y-lecciones.md` §1 (Bloqueo del despliegue por MissingSubscriptionRegistration).
+- [Bicep scopes](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/scope).
+- [az deployment group CLI](https://learn.microsoft.com/en-us/cli/azure/deployment/group).
 
 ---
 
@@ -288,7 +350,8 @@ in the subscription is limited to 0 for this region.
 #### Decisión
 
 - **Mantener deshabilitado** el módulo
-  `modules/app-service-plan.bicep` en `infra-rg.bicep` durante sprint 1.
+  `modules/app-service-plan.bicep` en `main.bicep` durante sprint 1
+  (comentado, líneas 75-77).
 - Las Function Apps en sprint 1 se diseñan para correr exclusivamente
   en **plan Consumption** (independiente del App Service Plan).
 - El parámetro `appServicePlanName` queda reservado en `main.bicep`
@@ -319,8 +382,8 @@ in the subscription is limited to 0 for this region.
 
 #### Referencias
 
-- `infrastructure/bicep/main.bicep` (líneas 51–54 y 99–100).
-- `infrastructure/bicep/modules/infra-rg.bicep` (líneas 54–56 y 93–96).
+- `infrastructure/bicep/main.bicep` (líneas 75-77, módulo comentado).
+- `infrastructure/bicep/modules/app-service-plan.bicep` (no se invoca).
 - [App Service limits](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/azure-subscription-service-limits#app-service-limits).
 - [Request quota increase](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/regional-quota-requests).
 
