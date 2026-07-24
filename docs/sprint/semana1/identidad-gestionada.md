@@ -41,8 +41,14 @@ Azure son las Function Apps:
 | **Backoffice Function App** | Service Bus (Send `document-analysis`), Azure SQL (mixto), Azure Blob Storage (delegación SAS), Application Insights | Mixto |
 | **Document Function App** | Service Bus (Receive `document-analysis`), Azure Blob Storage (read), Cognitive Services (invoke), Azure SQL (INSERT) | Mixto |
 
-Total: **5 Function Apps**, todas en plan Consumption según el Bicep
-desplegado en sprint 1.
+> **Aviso**: el diseño contempla cinco Function Apps, pero el template Bicep
+> de Sprint 1 **no las declara ni las despliega** (el módulo de App Service
+> Plan está deshabilitado por la cuota 0 vCPU; no existe módulo de
+> Function App). Las identidades gestionadas, las asignaciones RBAC de
+> runtime y la infraestructura de cómputo quedan **pendientes hasta que
+> exista el compute correspondiente** (Sprint 2 o cuando se ajuste la cuota).
+> Este documento describe la arquitectura objetivo; la implementación se
+> hará cuando el módulo compute esté habilitado en IaC.
 
 ---
 
@@ -77,12 +83,12 @@ desplegado en sprint 1.
 
 **Híbrido:**
 
-- **Scoring Function App** recibe una **UAMI dedicada** (`mi-cnt-dev-fraud-scoring`).
+- **Scoring Function App** recibe una **UAMI dedicada** (`id-centinela-scoring-dev`).
   Es el componente con más permisos críticos (Cosmos CRUD + Service Bus
   dual) y queremos poder rotarla / reasignarla sin tocar las otras FAs.
-- **Case Function App** recibe una **UAMI dedicada** (`mi-cnt-dev-fraud-cases`).
+- **Case Function App** recibe una **UAMI dedicada** (`id-centinela-cases-dev`).
   Mismo motivo: SQL de escritura, no queremos reusar la del scoring.
-- **Document Function App** recibe una **UAMI dedicada** (`mi-cnt-dev-fraud-documents`)
+- **Document Function App** recibe una **UAMI dedicada** (`id-centinela-documents-dev`)
   porque combina Blob, Cognitive Services y SQL — perfil distinto a las
   anteriores.
 - **Ingestion Function App** recibe **SAMI** porque su único permiso
@@ -108,9 +114,9 @@ Extiende la convención del proyecto (ver §infraestructura en
 
 | Recurso | Nombre | Tipo |
 |---|---|---|
-| Managed Identity — Scoring | `mi-cnt-dev-fraud-scoring` | UAMI |
-| Managed Identity — Case | `mi-cnt-dev-fraud-cases` | UAMI |
-| Managed Identity — Document | `mi-cnt-dev-fraud-documents` | UAMI |
+| Managed Identity — Scoring | `id-centinela-scoring-dev` | UAMI |
+| Managed Identity — Case | `id-centinela-cases-dev` | UAMI |
+| Managed Identity — Document | `id-centinela-documents-dev` | UAMI |
 | Managed Identity — Ingestion | (auto, basada en Function App) | SAMI |
 | Managed Identity — Backoffice | (auto, basada en Function App) | SAMI |
 
@@ -122,39 +128,39 @@ Las definiciones de roles built-in usadas siguen el catálogo oficial de
 Azure. Los nombres exactos y los IDs se confirmarán en sprint 2 con
 `az role definition list --query "[?roleName=='...']"`.
 
-### 4.1 Scoring Function App (UAMI `mi-cnt-dev-fraud-scoring`)
+### 4.1 Scoring Function App (UAMI `id-centinela-scoring-dev`)
 
 | Recurso | Rol | Justificación |
 |---|---|---|
-| Service Bus — namespace `cnt-dev-bus` | `Azure Service Bus Data Receiver` (sobre cola `transactions`) | Consumir mensajes de la cola `transactions`. |
-| Service Bus — namespace `cnt-dev-bus` | `Azure Service Bus Data Sender` (sobre cola `fraud-cases`) | Publicar `FraudCaseRequested` cuando score > umbral. |
-| Cosmos DB — cuenta `cnt-dev-cos` | `Cosmos DB Built-in Data Contributor` | CRUD sobre el contenedor `/accountId` (consultar historial, upsert de transacción enriquecida). |
-| Azure SQL — server `cnt-dev-sql` / DB `cnt-dev-sqldb` | Lectura via usuario contenido SQL AAD-only | Consultar `Rules`, `Thresholds`, `RiskMerchants` antes de aplicar reglas. |
+| Service Bus — namespace `sb-centinela-dev` | `Azure Service Bus Data Receiver` (sobre cola `transactions`) | Consumir mensajes de la cola `transactions`. |
+| Service Bus — namespace `sb-centinela-dev` | `Azure Service Bus Data Sender` (sobre cola `fraud-cases`) | Publicar `FraudCaseRequested` cuando score > umbral. |
+| Cosmos DB — cuenta `cosmos-centinela-dev` | `Cosmos DB Built-in Data Contributor` | CRUD sobre el contenedor `/accountId` (consultar historial, upsert de transacción enriquecida). |
+| Azure SQL — server `sql-centinela-dev` / DB `sqldb-centinela-dev` | Lectura via usuario contenido SQL AAD-only | Consultar `Rules`, `Thresholds`, `RiskMerchants` antes de aplicar reglas. |
 | Application Insights | `Monitoring Metrics Publisher` | Emitir telemetría. |
 
-### 4.2 Case Function App (UAMI `mi-cnt-dev-fraud-cases`)
+### 4.2 Case Function App (UAMI `id-centinela-cases-dev`)
 
 | Recurso | Rol | Justificación |
 |---|---|---|
-| Service Bus — namespace `cnt-dev-bus` | `Azure Service Bus Data Receiver` (sobre cola `fraud-cases`) | Consumir `FraudCaseRequested`. |
-| Azure SQL — server `cnt-dev-sql` / DB `cnt-dev-sqldb` | `db_datareader` + `db_datawriter` (sobre usuario contenido) | INSERT en `Cases`, `CaseEvents`, `Explanations`, `AuditLog`. |
+| Service Bus — namespace `sb-centinela-dev` | `Azure Service Bus Data Receiver` (sobre cola `fraud-cases`) | Consumir `FraudCaseRequested`. |
+| Azure SQL — server `sql-centinela-dev` / DB `sqldb-centinela-dev` | `db_datareader` + `db_datawriter` (sobre usuario contenido) | INSERT en `Cases`, `CaseEvents`, `Explanations`, `AuditLog`. |
 | Application Insights | `Monitoring Metrics Publisher` | Emitir telemetría. |
 
-### 4.3 Document Function App (UAMI `mi-cnt-dev-fraud-documents`)
+### 4.3 Document Function App (UAMI `id-centinela-documents-dev`)
 
 | Recurso | Rol | Justificación |
 |---|---|---|
-| Service Bus — namespace `cnt-dev-bus` | `Azure Service Bus Data Receiver` (sobre cola `document-analysis`) | Consumir `DocumentAnalysisRequested`. |
-| Azure Blob Storage — cuenta `cntdevst` | `Storage Blob Data Reader` (sobre contenedor `case-documents`) | Leer el documento subido para enviarlo a Cognitive Services. |
+| Service Bus — namespace `sb-centinela-dev` | `Azure Service Bus Data Receiver` (sobre cola `document-analysis`) | Consumir `DocumentAnalysisRequested`. |
+| Azure Blob Storage — cuenta `stcentineladev02` | `Storage Blob Data Reader` (sobre contenedor `case-documents`) | Leer el documento subido para enviarlo a Cognitive Services. |
 | Cognitive Services — cuenta Document Intelligence | `Cognitive Services User` | Invocar el modelo de extracción. |
-| Azure SQL — server `cnt-dev-sql` / DB `cnt-dev-sqldb` | `db_datawriter` | INSERT en `Documents`, `AuditLog`. |
+| Azure SQL — server `sql-centinela-dev` / DB `sqldb-centinela-dev` | `db_datawriter` | INSERT en `Documents`, `AuditLog`. |
 | Application Insights | `Monitoring Metrics Publisher` | Emitir telemetría. |
 
 ### 4.4 Ingestion Function App (SAMI)
 
 | Recurso | Rol | Justificación |
 |---|---|---|
-| Service Bus — namespace `cnt-dev-bus` | `Azure Service Bus Data Sender` (sobre cola `transactions`) | Publicar `TransactionReceived`. |
+| Service Bus — namespace `sb-centinela-dev` | `Azure Service Bus Data Sender` (sobre cola `transactions`) | Publicar `TransactionReceived`. |
 | Application Insights | `Monitoring Metrics Publisher` | Telemetría. |
 | Key Vault | `Key Vault Secrets User` (sólo si se requiere) | Lectura de secretos puntuales (no aplica en MVP actual). |
 
@@ -162,9 +168,9 @@ Azure. Los nombres exactos y los IDs se confirmarán en sprint 2 con
 
 | Recurso | Rol | Justificación |
 |---|---|---|
-| Service Bus — namespace `cnt-dev-bus` | `Azure Service Bus Data Sender` (sobre cola `document-analysis`) | Publicar `DocumentAnalysisRequested`. |
-| Azure Blob Storage — cuenta `cntdevst` | `Storage Blob Delegator` + `Storage Blob Data Contributor` | Generar SAS de corta duración (delegator) y validar carga (contributor). |
-| Azure SQL — server `cnt-dev-sql` / DB `cnt-dev-sqldb` | Usuario contenido por app role (`Analyst`/`Administrator`/`Auditor` mapeado a SQL) | Datos según el rol del usuario firmante. |
+| Service Bus — namespace `sb-centinela-dev` | `Azure Service Bus Data Sender` (sobre cola `document-analysis`) | Publicar `DocumentAnalysisRequested`. |
+| Azure Blob Storage — cuenta `stcentineladev02` | `Storage Blob Delegator` + `Storage Blob Data Contributor` | Generar SAS de corta duración (delegator) y validar carga (contributor). |
+| Azure SQL — server `sql-centinela-dev` / DB `sqldb-centinela-dev` | Usuario contenido por app role (`Analyst`/`Administrator`/`Auditor` mapeado a SQL) | Datos según el rol del usuario firmante. |
 | Application Insights | `Monitoring Metrics Publisher` | Telemetría. |
 
 ### 4.6 Ninguna MI tiene permisos de control
@@ -202,9 +208,9 @@ el mismo perfil — sería complejidad gratuita.
 
 El script `configure-identities.sh` (a crear en sprint 2) ejecutará:
 
-1. `az identity create --name mi-cnt-dev-fraud-scoring --resource-group $RG`
-2. `az identity create --name mi-cnt-dev-fraud-cases   --resource-group $RG`
-3. `az identity create --name mi-cnt-dev-fraud-documents --resource-group $RG`
+1. `az identity create --name id-centinela-scoring-dev --resource-group $RG`
+2. `az identity create --name id-centinela-cases-dev   --resource-group $RG`
+3. `az identity create --name id-centinela-documents-dev --resource-group $RG`
 4. `az functionapp identity assign --name <ingestion>  --identities <UAMI-INGESTION-O-SAMI>`
    (repetir para cada FA; las 2 SAMIs reciben `--identities system`).
 5. `az role assignment create --assignee <MI_OBJECT_ID> --role "..." --scope /subscriptions/.../...`

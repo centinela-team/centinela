@@ -28,7 +28,7 @@ Tal como se definen en `infrastructure/bicep/modules/virtual-network.bicep`:
 | `snet-pe` | `10.20.2.0/24` | Reservada para Private Endpoints cuando se autoricen (sprint 3+, fuera de MVP). | Gratis mientras no haya PE. |
 | `snet-data` | `10.20.3.0/24` | Reservada para data services (SQL, Cosmos) si en el futuro se requiere VNet Integration. | Gratis. |
 
-VNet: `cnt-dev-vnet` (10.20.0.0/16), región `eastus`.
+VNet: `vnet-centinela-dev` (10.20.0.0/16), región `eastus`.
 
 ---
 
@@ -40,7 +40,7 @@ VNet: `cnt-dev-vnet` (10.20.0.0/16), región `eastus`.
 | Outbound default | **Allow** (necesario para que Functions accedan a Service Bus, Cosmos, SQL, Storage, App Insights, Entra ID). |
 | Inbound default | **Deny** salvo `snet-apps` que admite tráfico HTTPS desde Internet hacia la Function App de ingesta (necesario por el caso de uso). |
 | Logging | Todo NSG habilita flow logs hacia Log Analytics (workspace asociado a App Insights) en sprint 2. |
-| Inspección | Los PaaS públicos (Service Bus, Cosmos, SQL, Storage) tienen su propio firewall y acls (`defaultAction: Allow` en MVP, ver `prueba-aislamiento.md`). |
+| Inspección | Storage y Key Vault tienen `defaultAction: Deny` con `virtualNetworkRule` para `snet-apps` (definido en IaC, ver `prueba-aislamiento.md` y `storage-account.bicep` / `key-vault.bicep`). Service Bus permanece público en el módulo actual y requiere una decisión posterior para endurecerlo. |
 
 ---
 
@@ -61,10 +61,10 @@ sprint 2).
 | APP-IN-02 | Inbound | Internet (`0.0.0.0/0`) | CIDR `snet-apps` | 80 | TCP | Deny | Forzar HTTPS; cualquier request HTTP debe redirigirse. | 2 |
 | APP-IN-03 | Inbound | CIDR `snet-apps` | CIDR `snet-apps` | * | * | Allow | Function-to-function healthchecks internos. | 2 |
 | APP-IN-99 | Inbound | * | * | * | * | Deny | Default deny. | 2 |
-| APP-OUT-01 | Outbound | CIDR `snet-apps` | Service Bus FQDN (`cnt-dev-bus.servicebus.windows.net`) | 443 | TCP | Allow | Publicar en cola `transactions` y `fraud-cases`. | 2 |
-| APP-OUT-02 | Outbound | CIDR `snet-apps` | Cosmos FQDN (`cnt-dev-cos.documents.azure.com`) | 443 | TCP | Allow | Lectura/escritura del contenedor `/accountId`. | 2 |
-| APP-OUT-03 | Outbound | CIDR `snet-apps` | SQL FQDN (`cnt-dev-sql.database.windows.net`) | 1433 | TCP | Allow | Lectura de configuración y escritura de casos. | 2 |
-| APP-OUT-04 | Outbound | CIDR `snet-apps` | Blob FQDN (`cntdevst.blob.core.windows.net`) | 443 | TCP | Allow | Lectura de documentos por Document Function. | 2 |
+| APP-OUT-01 | Outbound | CIDR `snet-apps` | Service Bus FQDN (`sb-centinela-dev.servicebus.windows.net`) | 443 | TCP | Allow | Publicar en cola `transactions` y `fraud-cases`. | 2 |
+| APP-OUT-02 | Outbound | CIDR `snet-apps` | Cosmos FQDN (`cosmos-centinela-dev.documents.azure.com`) | 443 | TCP | Allow | Lectura/escritura del contenedor `/accountId`. | 2 |
+| APP-OUT-03 | Outbound | CIDR `snet-apps` | SQL FQDN (`sql-centinela-dev.database.windows.net`) | 1433 | TCP | Allow | Lectura de configuración y escritura de casos. | 2 |
+| APP-OUT-04 | Outbound | CIDR `snet-apps` | Blob FQDN (`stcentineladev02.blob.core.windows.net`) | 443 | TCP | Allow | Lectura de documentos por Document Function. | 2 |
 | APP-OUT-05 | Outbound | CIDR `snet-apps` | App Insights / Log Analytics FQDN | 443 | TCP | Allow | Telemetría. | 2 |
 | APP-OUT-06 | Outbound | CIDR `snet-apps` | Entra ID (`login.microsoftonline.com`, `graph.microsoft.com`) | 443 | TCP | Allow | Validar JWT y consultar Graph. | 2 |
 | APP-OUT-99 | Outbound | * | * | * | * | Deny | Default deny outbound (todo lo no listado está prohibido). | 2 |
@@ -103,16 +103,16 @@ Las reglas equivalentes en el firewall del PaaS serían:
 
 | Recurso | Regla | Estado |
 |---|---|---|
-| Storage Account `cntdevst` | `defaultAction: Allow`, sin IP rules en MVP; en sprint 2 restringir a IPs salientes de Functions (`possibleOutboundIpAddresses`) o permitir `snet-apps` por Service Endpoint. | sprint 2 |
-| Service Bus `cnt-dev-bus` | `defaultAction: Allow`, sin reglas en MVP; restringir a Service Tag `AzureFunctions` cuando se habilite. | sprint 2 |
-| Cosmos DB `cnt-dev-cos` | `defaultAction: Allow` con disableLocalAuth y Entra-only; sin IP rules. | sprint 1 |
-| Azure SQL `cnt-dev-sql` | Firewall: agregar `possibleOutboundIpAddresses` de las Function Apps (script `configure-sql-firewall.sh`). | sprint 2 |
+| Storage Account `stcentineladev02` | `defaultAction: Allow`, sin IP rules en MVP; en sprint 2 restringir a IPs salientes de Functions (`possibleOutboundIpAddresses`) o permitir `snet-apps` por Service Endpoint. | sprint 2 |
+| Service Bus `sb-centinela-dev` | `defaultAction: Allow`, sin reglas en MVP; restringir a Service Tag `AzureFunctions` cuando se habilite. | sprint 2 |
+| Cosmos DB `cosmos-centinela-dev` | `defaultAction: Allow` con disableLocalAuth y Entra-only; sin IP rules. | sprint 1 |
+| Azure SQL `sql-centinela-dev` | Firewall: agregar `possibleOutboundIpAddresses` de las Function Apps (script `configure-sql-firewall.sh`). | sprint 2 |
 
 ### 3.5 Service Endpoints (gratis) vs Private Endpoints ($$)
 
 | Aspecto | Service Endpoint | Private Endpoint |
 |---|---|---|
-| **Coste** | Gratis. | ~USD 0.01/hora + ~USD 0.01/GB procesado. Para una suscripción gratuita de USD 200 en 30 días, **prohibitivo**. |
+| **Coste** | Gratis. | ~USD 0.01/hora + ~USD 0.01/GB procesado. Para una suscripción gratuita de USD 100 en 30 días, **prohibitivo**. |
 | **Acceso desde** | Desde la VNet designada, manteniendo el endpoint público del servicio PaaS. | Desde la VNet, con una IP privada en `snet-pe` apuntando al servicio. |
 | **DNS** | FQDN público sigue resolviendo a la IP pública del servicio, pero el tráfico se rutea por la red de Azure. | Requiere Private DNS Zone para resolver el FQDN a la IP privada. |
 | **Aislamiento real** | Tráfico optimizado en backbone Azure, no Internet; logs de NSG. | Red privada lógica; el servicio deja de tener endpoint público accesible. |
@@ -153,7 +153,7 @@ habilitan. Es la **lectura cruzada** para auditoría.
   para `snet-apps`, `snet-data` y `snet-pe`. Hoy no existen.
 - **Asociaciones subnet-NSG**: `properties.networkSecurityGroup` en cada
   subnet se setea en sprint 2.
-- **Flow logs a Log Analytics**: workspace ya existe (`cnt-dev-appi-law`);
+- **Flow logs a Log Analytics**: workspace ya existe (`log-centinela-dev`);
   basta agregar el setting `Microsoft.Network/networkSecurityGroups/flowLogs`.
 - **Cifrado del tráfico interno**: Azure ya cifra en el backbone; no se
   requiere acción adicional.

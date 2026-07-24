@@ -7,7 +7,17 @@
 
 ## Resumen ejecutivo
 
-Se mantiene `eastus` como región primaria de Centinela porque combina una latencia medida de **92 ms desde Bogotá**, disponibilidad pública documentada de Azure AI Document Intelligence Free/S0 y un costo estimado de **USD 2.02 para 21 días** del PaaS base considerado en este Sprint 1. El despliegue Bicep ya fue ejecutado allí y los recursos base quedaron en `Succeeded`.
+Se mantiene `eastus` como región primaria de Centinela porque combina una latencia medida de **92 ms desde Bogotá**, disponibilidad pública documentada de Azure AI Document Intelligence Free/S0 y un costo estimado de **USD 2.02 para 21 días** del PaaS base considerado en este Sprint 1.
+
+> **Estado real (2026-07-24):** el despliegue Bicep de los recursos base
+> **NO se ha ejecutado todavía** en esta suscripción. El template está
+> validado y listo (`infrastructure/bicep/main.bicep` con `targetScope =
+> 'resourceGroup'`, `infrastructure/scripts/azuredeploy.sh` con pre-flight
+> de providers). El primer `what-if` (2026-07-24) mostró los 10 recursos
+> a crear; el `apply` quedó bloqueado por `MissingSubscriptionRegistration`
+> en 5 namespaces que requieren Owner de la suscripción para registrar.
+> Ver `docs/sprint/semana1/incidentes-y-lecciones.md` §1 para el detalle
+> y `ADR-005` en `decisiones-arquitectura.md` para la decisión de scope-RG.
 
 `mexicocentral` muestra una latencia algo menor, pero la diferencia es pequeña y la disponibilidad/cuota real de AI Document Intelligence requiere más cautela. `canadacentral` tiene latencia equivalente, pero el costo estimado es superior. La decisión no elimina los riesgos de la cuota de cómputo: la cuota 0 vCPU afecta la validación de Functions del Sprint 2.
 
@@ -49,7 +59,7 @@ El costo de referencia para 21 días se calculó considerando solamente el PaaS 
 
 Los precios son estimaciones, **según pricing público a 2026-07-20**. No sustituyen el consumo real de la suscripción ni incluyen servicios que aún no se despliegan en Sprint 2, como Cosmos DB, SQL, Functions o Document Intelligence con consumo.
 
-El total de USD 2.02 representa aproximadamente el 1.01 % del crédito de USD 200 y deja margen amplio frente al objetivo operativo del proyecto de permanecer por debajo de USD 60.
+El total de USD 2.02 representa aproximadamente el 1.01 % del crédito de USD 100 y deja margen amplio frente al objetivo operativo del proyecto de permanecer por debajo de USD 60.
 
 ## 4. Azure AI Document Intelligence
 
@@ -112,7 +122,7 @@ Por ello, `eastus` es la opción regional seleccionada, pero AI Document Intelli
 La justificación cuantitativa es:
 
 - **92 ms** desde Bogotá: latencia suficientemente baja y empatada con `canadacentral`.
-- **USD 2.02 / 21 días** para el PaaS base considerado: costo muy inferior al crédito de USD 200 y alineado con el límite operativo de USD 60.
+- **USD 2.02 / 21 días** para el PaaS base considerado: costo muy inferior al crédito de USD 100 y alineado con el límite operativo de USD 60.
 - **AI Document Intelligence Free/S0 documentado como disponible** en `eastus`, aunque la cuota de la suscripción todavía debe probarse.
 - El despliegue real ya fue completado y verificado en `eastus`, reduciendo riesgo de reprovisionamiento y de introducir nuevas variables.
 

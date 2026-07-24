@@ -1,5 +1,7 @@
 # Prueba de aislamiento de red
 
+> Estado tras adaptar nombres: el procedimiento ya usa la convención nueva, pero debe ejecutarse otra vez después del próximo despliegue. Las respuestas HTTP documentadas son evidencia histórica y no prueban recursos que aún no existen con los nombres nuevos.
+
 | Campo | Valor |
 |---|---|
 | **Documento** | `prueba-aislamiento.md` |
@@ -9,21 +11,21 @@
 | **Estado** | Borrador (procedimiento + resultado esperado; ejecución pendiente sprint 2) |
 | **Fuentes internas** | [`reglas-trafico.md`](./reglas-trafico.md), [`infrastructure/bicep/modules/storage-account.bicep`](../../../infrastructure/bicep/modules/storage-account.bicep), [`docs/architecture/arquitectura-objetivo.md`](../architecture/arquitectura-objetivo.md) §8.4 |
 
-> **Aviso de alcance**: el sprint 1 **no restringe** el acceso público al
-> Storage Account (`defaultAction: Allow` por especificación, Private
-> Endpoints fuera de alcance). Por lo tanto **la prueba tal como está
-> descrita abajo sólo pasará completamente en sprint 2** cuando se active
-> el Service Endpoint o se restrinja por IP. En este documento se describe
-> el procedimiento, el resultado esperado en cada fase y el plan de
-> remediación.
+> **Aviso de alcance**: el template Bicep de Sprint 1 define
+> `defaultAction: Deny` para Storage y Key Vault, con una `virtualNetworkRule`
+> que autoriza `snet-apps` (Service Endpoint de Storage/SQL/KeyVault ya
+> presente en `virtual-network.bicep:45-61`). El estado **definido en IaC**
+> cumple el aislamiento. El estado **runtime** queda pendiente de validar
+> después del primer despliegue exitoso. Private Endpoints permanecen fuera
+> del alcance de Sprint 1.
 
 ---
 
 ## 1. Objetivo de la prueba
 
-Demostrar que **el Storage Account `cntdevst` no es alcanzable desde
+Demostrar que **el Storage Account `stcentineladev02` no es alcanzable desde
 Internet** una vez aplicadas las mitigaciones de red, y que la única ruta
-válida es a través de la VNet `cnt-dev-vnet` (subred `snet-apps`).
+válida es a través de la VNet `vnet-centinela-dev` (subred `snet-apps`).
 
 La prueba tiene dos partes:
 
@@ -39,8 +41,8 @@ La prueba tiene dos partes:
 
 ```bash
 az storage account show \
-  --name cntdevst \
-  --resource-group rg-cnt-dev \
+  --name stcentineladev02 \
+  --resource-group rg-centinela-dev \
   --query "networkRuleSet" \
   -o json
 ```
@@ -58,40 +60,23 @@ El JSON retornado tiene la forma:
 }
 ```
 
-#### Estado sprint 1 (lo que veremos hoy)
-
-```json
-{
-  "bypass": "AzureServices",
-  "defaultAction": "Allow",
-  "ipRules": [],
-  "virtualNetworkRules": []
-}
-```
-
-`defaultAction: Allow` significa que el Storage **sí responde** a
-cualquier IP en Internet (con la salvedad de que
-`allowBlobPublicAccess: false` y `allowSharedKeyAccess: false` hacen que
-los accesos anónimos o con clave compartida sean rechazados — la única
-forma válida de acceso sigue siendo Managed Identity).
-
-#### Estado sprint 2 objetivo
+#### Estado definido por el Bicep adaptado (pendiente de despliegue)
 
 ```json
 {
   "bypass": "AzureServices",
   "defaultAction": "Deny",
-  "ipRules": [
-    { "value": "<possibleOutboundIpAddresses de las Function Apps>", "action": "Allow" }
-  ],
+  "ipRules": [],
   "virtualNetworkRules": [
-    { "id": "/subscriptions/.../virtualNetworks/cnt-dev-vnet/subnets/snet-apps", "action": "Allow" }
+    { "id": "/subscriptions/.../virtualNetworks/vnet-centinela-dev/subnets/snet-apps", "action": "Allow" }
   ]
 }
 ```
 
-Con `defaultAction: Deny` y una `virtualNetworkRule` sobre `snet-apps`,
-sólo el tráfico originado en esa subred puede llegar al Storage.
+`defaultAction: Deny` bloquea cualquier origen no autorizado. La regla de
+`snet-apps`, combinada con el Service Endpoint de Storage, autoriza únicamente
+la subred de aplicación. Este estado debe verificarse de nuevo tras desplegar;
+los resultados de pruebas anteriores no prueban los recursos renombrados.
 
 ---
 
@@ -124,37 +109,20 @@ A diferencia de un Private Endpoint:
 - El servicio PaaS ve la IP pública del backbone y permite el acceso **si**
   la subred está listada en `virtualNetworkRules` del firewall.
 
-#### Activación (sprint 2, Bicep)
+#### Configuración actual (Bicep)
 
-```bicep
-resource snetApps 'Microsoft.Network/virtualNetworks/subnets@2023-09-01' existing = {
-  parent: vnet
-  name: 'snet-apps'
-}
+La VNet ya habilita `Microsoft.Storage`, `Microsoft.Sql` y
+`Microsoft.KeyVault` en `snet-apps`, y los módulos Storage/Key Vault agregan
+esa subred a sus reglas con `defaultAction: Deny`. No hace falta aplicar un
+patch manual separado; el template completo es la fuente de verdad.
 
-resource serviceEndpointStorage 'Microsoft.Storage/storageAccounts@2023-01-01' existing = {
-  name: storageAccountName
-}
+La verificación sigue siendo obligatoria tras el despliegue:
 
-// Patch: agregar la subred a virtualNetworkRules
-resource storageNetRules 'Microsoft.Storage/storageAccounts@2023-01-01' = {
-  name: storageAccountName
-  location: location
-  properties: {
-    networkAcls: {
-      bypass: 'AzureServices'
-      defaultAction: 'Deny'
-      virtualNetworkRules: [
-        { id: snetApps.id, action: 'Allow' }
-      ]
-    }
-  }
-}
+```bash
+az network vnet subnet show -g rg-centinela-dev \
+  --vnet-name vnet-centinela-dev -n snet-apps \
+  --query 'serviceEndpoints[].service' -o tsv
 ```
-
-> **Importante**: este patch re-aplica el recurso Storage con `defaultAction:
-> Deny`. Requiere mover `Microsoft.Storage/storageAccounts` del módulo
-> actual a una versión mutable (no managed-by-others).
 
 ### 3.3 Service Endpoint vs Private Endpoint — recapitulación
 
@@ -182,7 +150,7 @@ PaaS críticos (Storage y Service Bus) en sprint 2. Private Endpoint queda
 ```bash
 # Esperado sprint 1: el endpoint responde pero las credenciales requeridas
 # (Entra ID) hacen que la operación falle con 401/403.
-curl -I https://cntdevst.blob.core.windows.net
+curl -I https://stcentineladev02.blob.core.windows.net
 ```
 
 **Resultado sprint 1** (esperado, dado que `defaultAction: Allow`):
@@ -225,7 +193,7 @@ IP de origen no está en ninguna regla permitida.
 ```bash
 # Con VNet integration activa y SAS o MI válida:
 az storage blob list \
-  --account-name cntdevst \
+  --account-name stcentineladev02 \
   --container-name case-documents \
   --auth-mode login
 ```
@@ -276,7 +244,7 @@ Cuando se ejecute la prueba en sprint 2, se archiva en
   pueda modificar `networkAcls`, hay que extraer la definición del módulo
   actual o aplicar un `patch` por separado. Decisión en sprint 2.
 - **Mismo ejercicio para Service Bus**: replicar el procedimiento sobre
-  `cnt-dev-bus` (la superficie de ataque es similar: el namespace es
+  `sb-centinela-dev` (la superficie de ataque es similar: el namespace es
   público y la autenticación local está habilitada).
 - **Restricción por IP del SQL Firewall**: el script
   `configure-sql-firewall.sh` ya está previsto en el spec; ejecuta este
