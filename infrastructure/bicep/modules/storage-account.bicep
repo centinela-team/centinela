@@ -31,6 +31,9 @@ param subnetDataId string = ''
 ])
 param accessTier string = 'Hot'
 
+@description('Nombre del contenedor privado para documentos de verificación')
+param documentsContainerName string = 'case-documents'
+
 resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: name
   location: location
@@ -64,6 +67,19 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   }
 }
 
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-01-01' = {
+  parent: storage
+  name: 'default'
+}
+
+resource documentsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  parent: blobService
+  name: documentsContainerName
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 @description('ID del Storage Account')
 output id string = storage.id
 
@@ -75,6 +91,9 @@ output primaryBlobEndpoint string = storage.properties.primaryEndpoints.blob
 
 @description('Primary file endpoint')
 output primaryFileEndpoint string = storage.properties.primaryEndpoints.file
+
+@description('Nombre del contenedor privado documental')
+output documentsContainerName string = documentsContainer.name
 
 // Connection string NO se expone como output. El acceso al Storage es siempre
 // via Managed Identity. Si necesitas la cadena en runtime, subela a Key Vault
