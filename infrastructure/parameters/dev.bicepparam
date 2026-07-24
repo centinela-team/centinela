@@ -16,7 +16,7 @@ param storageInstance = '02'  // 01 está ocupado globalmente; 02 verificado dis
 param environment = 'dev'     // dev|stg|prd
 param location = 'eastus'     // región primaria
 
-// Tags estándar del sprint. owner=jpeg-1 (no exponer GitHub username).
+// Tags estándar del sprint. owner es el alias del responsable (no exponer GitHub username).
 param tags = {
   project: 'centinela'
   owner: 'jpgcano'
