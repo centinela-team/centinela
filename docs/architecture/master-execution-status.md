@@ -55,3 +55,7 @@ La API local apunta a los nombres **reales (*03)** hasta unificar con redeploy B
 - Scripts `setup-observability.ps1` y `load-queue-demo.ps1`
 - Docs: cicd, containers-scaling, observability
 - Azure SQL Basic en canadacentral + esquema aplicado
+- **Alerta** `alert-scoring-fail-dev` + AG `ag-centinela-dev` (creadas en Azure)
+- Container Apps Environment `cae-centinela-dev` (provisionando)
+- Scripts `deploy-container-apps.ps1`, `create-scoring-alert.ps1`
+- Reportes: crédito, imágenes, cuotas, cierre DoD, checklist sustentación

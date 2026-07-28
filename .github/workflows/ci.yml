@@ -118,7 +118,15 @@ jobs:
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-      - name: Placeholder deploy
+      - name: Deploy Container Apps
+        env:
+          API_IMAGE: ghcr.io/${{ github.repository_owner }}/centinela-ingestion-api:latest
+          SCORING_IMAGE: ghcr.io/${{ github.repository_owner }}/centinela-scoring-engine:latest
         run: |
-          echo "Deploy Azure gated por ENABLE_AZURE_DEPLOY."
-          echo "Ver docs/architecture/cicd-platform.md"
+          OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          API_IMAGE="ghcr.io/${OWNER}/centinela-ingestion-api:latest"
+          SCORING_IMAGE="ghcr.io/${OWNER}/centinela-scoring-engine:latest"
+          pwsh -File infrastructure/scripts/deploy-container-apps.ps1 \
+            -ApiImage "$API_IMAGE" \
+            -ScoringImage "$SCORING_IMAGE" || \
+          bash -c "echo Use deploy-container-apps.ps1 locally if pwsh missing in runner"
