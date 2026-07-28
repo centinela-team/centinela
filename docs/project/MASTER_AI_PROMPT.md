@@ -202,5 +202,3 @@ El proyecto estará 100% completado cuando:
 
 ---
 
-## 8. RESUMEN DE LA ACCIÓN
-Se ha generado la guía maestra de contexto en el archivo [`docs/project/MASTER_AI_PROMPT.md`](file:///c:/Users/juliv/.gemini/antigravity/scratch/centinela/docs/project/MASTER_AI_PROMPT.md) tomando todas las especificaciones, decisiones de Bicep, convenciones de nombres, estructura del repo, reglas heurísticas y pasos del proyecto Centinela. Este archivo servirá como instrucción completa para cualquier IA que vaya a construir el sistema desde cero.
