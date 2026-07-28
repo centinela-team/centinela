@@ -11,6 +11,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 RUN useradd --create-home --uid 10001 appuser
 COPY --from=builder /install /usr/local
-COPY worker.py cosmos_store.py geo.py rules.py ./
+COPY worker.py cosmos_store.py geo.py rules.py telemetry.py ./
 USER appuser
 CMD ["python", "worker.py"]
