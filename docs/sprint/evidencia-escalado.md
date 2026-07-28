@@ -1,41 +1,34 @@
-# Evidencia de escalado — Container Apps
+# Evidencia de escalado y deploy — Container Apps
 
 Fecha: 2026-07-28
 
-## Plataforma
+## Plataforma desplegada
 
 | Recurso | Valor |
 |---|---|
 | Environment | `cae-centinela-dev` (East US, Succeeded) |
-| App demo | `ca-centinela-api-dev` |
-| URL | https://ca-centinela-api-dev.livelyground-d2f1acd6.eastus.azurecontainerapps.io/ |
-| Escala | `minReplicas=0`, `maxReplicas=3` |
-| Métrica HTTP | RPS / concurrent requests (ingress) |
-| Métrica pipeline (diseño) | Profundidad cola `transactions` para el worker de scoring |
+| Registry | `acrcentineladev05.azurecr.io` |
+| API | `ca-centinela-api-dev` → imagen **centinela-ingestion-api:latest** |
+| Scoring | `ca-centinela-scoring-dev` → imagen **centinela-scoring-engine:latest** |
+| URL API | https://ca-centinela-api-dev.livelyground-d2f1acd6.eastus.azurecontainerapps.io/ |
+| Health | `GET /v1/health` → **200** `{"status":"ok"}` |
+| Escala API | min 0 / max 3 |
+| Escala scoring | min 1 / max 5 |
+| App Insights | CS inyectado en ambas apps |
 
-## Procedimiento reproducible
+## Tamaños de imagen (medidos)
+
+| Imagen | Tamaño |
+|---|---|
+| centinela-ingestion-api:latest | **309 MB** |
+| centinela-scoring-engine:latest | **253 MB** |
+
+## Procedimiento de carga
 
 ```powershell
-# Carga
-1..40 | ForEach-Object { Invoke-WebRequest https://ca-centinela-api-dev.livelyground-d2f1acd6.eastus.azurecontainerapps.io/ -UseBasicParsing }
-# Réplicas
+$url = "https://ca-centinela-api-dev.livelyground-d2f1acd6.eastus.azurecontainerapps.io/"
+1..40 | ForEach-Object { Invoke-WebRequest "$url/v1/health" -UseBasicParsing }
 az containerapp replica list -g rg-centinela-dev -n ca-centinela-api-dev -o table
 ```
 
-## Resultado observado (2026-07-28)
-
-- App en estado **Running**
-- Réplica activa bajo tráfico: `ca-centinela-api-dev--7bmtp5r-5b69bb78-rz6b4`
-- Escala configurada: min **0** / max **3** (scale-to-zero al cesar carga)
-
-Capturar en sustentación: portal Container Apps → Scale / Revisions tras generar carga y tras 10–15 min de idle (réplicas → 0).
-
-## Sustitución por imágenes Centinela
-
-```powershell
-.\infrastructure\scripts\deploy-container-apps.ps1 `
-  -ApiImage ghcr.io/centinela-team/centinela-ingestion-api:latest `
-  -ScoringImage ghcr.io/centinela-team/centinela-scoring-engine:latest
-```
-
-(Asignar MI + roles SB/Cosmos/Storage; configurar secretos GHCR si el paquete es privado.)
+Con `minReplicas=0` en API, sin tráfico las réplicas bajan a 0.
