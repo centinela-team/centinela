@@ -1,0 +1,12 @@
+{
+  "transaction_id": "not-a-uuid",
+  "account_id": "acc-demo-001",
+  "amount": "-10",
+  "currency": "peso",
+  "occurred_at": "2099-01-01T00:00:00Z",
+  "latitude": 200,
+  "longitude": -74.0721,
+  "merchant_id": "merchant-bog-01",
+  "merchant_category": "electronics",
+  "extra_field": "should-be-rejected"
+}

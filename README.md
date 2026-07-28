@@ -1,30 +1,51 @@
 # Centinela
 
-Motor de deteccion de fraude transaccional en tiempo real.
+Motor de detección de fraude transaccional en tiempo real (Azure).
 
-## Proposito
+## Estado actual — Semana 1 en progreso
 
-Centinela recibe transacciones financieras, las desacopla mediante eventos y permite analizarlas con reglas heuristicas para identificar posibles casos de fraude.
+| Componente | Estado |
+|---|---|
+| Scripts IaC (`provision` / `shutdown`) | Listo |
+| Contrato de transacción | Listo |
+| API de ingesta (FastAPI) | Listo |
+| Storage + cola Service Bus | Listo (vía script) |
+| Motor de scoring | Semana 2 |
+| Casos / explicador / CI-CD | Semana 3 |
 
-Este repositorio esta preparado para organizar la API de ingesta, el motor de scoring, la gestion de casos, el explicador, la verificacion documental, la infraestructura en Azure, los contratos, las pruebas y la documentacion tecnica del proyecto.
+## Inicio rápido
+
+Guía completa: [docs/deployment/README.md](docs/deployment/README.md)
+
+```powershell
+# 1. Infraestructura Azure
+cd infrastructure\scripts
+.\provision.ps1
+
+# 2. API local
+cd ..\..\backend\ingestion-api
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+$env:PYTHONPATH = "."
+uvicorn app.main:app --reload --port 8000
+```
 
 ## Estructura
 
-- `backend/`: servicios backend y componentes compartidos.
-- `frontend/`: dashboards para analistas y administradores.
-- `infrastructure/`: infraestructura como codigo, scripts, monitoreo y diagramas.
-- `docs/`: documentacion funcional, tecnica y de gestion del proyecto.
-- `contracts/`: contratos de eventos y API.
-- `postman/`: colecciones y ambientes para pruebas manuales.
-- `samples/`: datos de ejemplo.
-- `tests/`: pruebas unitarias, integracion, rendimiento y seguridad.
+- `backend/ingestion-api/` — API de ingesta (validar → persistir → acuse)
+- `infrastructure/scripts/` — aprovisionamiento y apagado
+- `contracts/api/` — JSON Schema del contrato
+- `docs/` — arquitectura, red, roles, despliegue
+- `samples/` — payloads de prueba
 
-## Estado
+## Requisitos de la API (semana 1)
 
-Estructura inicial del proyecto. No contiene funcionalidades implementadas.
+La API **no** calcula scores ni abre casos. Solo:
 
-## Documentacion y seguimiento
+1. Recibe el payload  
+2. Valida el contrato  
+3. Persiste la transacción cruda  
+4. Responde acuse (`202`)  
 
-- Especificacion del proyecto: [docs/project/Project_Specification.md](docs/project/Project_Specification.md)
-- Memoria del proyecto para agentes de IA: [docs/project/AI_CONTEXT.md](docs/project/AI_CONTEXT.md)
-- GitHub Project: Centinela - Sprint Unico
+Punto de inserción para mensajería (semana 2): `EventPublisher` en `app/infrastructure/messaging.py`.

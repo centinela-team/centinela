@@ -1,0 +1,11 @@
+{
+  "transaction_id": "11111111-1111-4111-8111-111111111111",
+  "account_id": "acc-demo-001",
+  "amount": "85000.50",
+  "currency": "COP",
+  "occurred_at": "2026-07-28T12:00:00Z",
+  "latitude": 4.7110,
+  "longitude": -74.0721,
+  "merchant_id": "merchant-bog-01",
+  "merchant_category": "electronics"
+}
