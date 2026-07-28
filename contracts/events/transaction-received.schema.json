@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centinela.local/contracts/events/transaction-received.schema.json",
+  "title": "TransactionReceived",
+  "description": "Evento publicado por la API tras aceptación durable. Activa el scoring de forma asíncrona.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventType",
+    "schemaVersion",
+    "transactionId",
+    "accountId",
+    "correlationId",
+    "occurredAt",
+    "receivedAt",
+    "amount",
+    "currency",
+    "type",
+    "location"
+  ],
+  "properties": {
+    "eventType": { "const": "TransactionReceived" },
+    "schemaVersion": { "type": "string", "const": "1.0" },
+    "transactionId": { "type": "string", "format": "uuid" },
+    "accountId": { "type": "string" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "receivedAt": { "type": "string", "format": "date-time" },
+    "clientObservedAt": { "type": ["string", "null"], "format": "date-time" },
+    "amount": { "type": "string" },
+    "currency": { "type": "string" },
+    "type": { "type": "string", "enum": ["PURCHASE", "TRANSFER", "WITHDRAWAL"] },
+    "merchant": {
+      "type": ["object", "null"],
+      "properties": {
+        "merchantId": { "type": "string" },
+        "categoryCode": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "location": {
+      "type": "object",
+      "required": ["latitude", "longitude"],
+      "properties": {
+        "latitude": { "type": "string" },
+        "longitude": { "type": "string" },
+        "city": { "type": "string" },
+        "country": { "type": "string" }
+      }
+    }
+  }
+}

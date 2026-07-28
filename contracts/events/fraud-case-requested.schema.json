@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centinela.local/contracts/events/fraud-case-requested.schema.json",
+  "title": "FraudCaseRequested",
+  "description": "Evento publicado por el scoring cuando score >= umbral.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventType",
+    "schemaVersion",
+    "transactionId",
+    "accountId",
+    "correlationId",
+    "score",
+    "threshold",
+    "triggeredRules",
+    "requestedAt"
+  ],
+  "properties": {
+    "eventType": { "const": "FraudCaseRequested" },
+    "schemaVersion": { "type": "string", "const": "1.0" },
+    "transactionId": { "type": "string", "format": "uuid" },
+    "accountId": { "type": "string" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "score": { "type": "integer", "minimum": 0 },
+    "threshold": { "type": "integer", "minimum": 0 },
+    "triggeredRules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ruleId", "points", "evidence"],
+        "properties": {
+          "ruleId": {
+            "type": "string",
+            "enum": ["VELOCITY", "ATYPICAL_AMOUNT", "GEO_IMPOSSIBLE", "RISKY_MERCHANT"]
+          },
+          "points": { "type": "integer" },
+          "evidence": { "type": "object" }
+        }
+      }
+    },
+    "requestedAt": { "type": "string", "format": "date-time" }
+  }
+}

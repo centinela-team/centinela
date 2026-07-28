@@ -1,51 +1,45 @@
 # Centinela
 
-Motor de detección de fraude transaccional en tiempo real (Azure).
+Motor de detección de fraude transaccional en tiempo real sobre Azure
+(fintech académica — semanas 1–3).
 
-## Estado actual — Semana 1 en progreso
+## Estado
 
 | Componente | Estado |
 |---|---|
-| Scripts IaC (`provision` / `shutdown`) | Listo |
-| Contrato de transacción | Listo |
-| API de ingesta (FastAPI) | Listo |
-| Storage + cola Service Bus | Listo (vía script) |
-| Motor de scoring | Semana 2 |
-| Casos / explicador / CI-CD | Semana 3 |
+| API ingesta (`POST /v1/transactions` → 202) | Listo |
+| Service Bus + Storage + Cosmos + SQL | Listo (nombres `*03` / SQL `*05`) |
+| Scoring (4 reglas) + casos + explicador | Listo |
+| Documentos (DI opcional / fallback local) | Listo |
+| Dashboard analistas (React) | Listo |
+| CI GitHub Actions + Dockerfiles | Listo (deploy Azure gated) |
 
 ## Inicio rápido
 
 Guía completa: [docs/deployment/README.md](docs/deployment/README.md)
 
 ```powershell
-# 1. Infraestructura Azure
-cd infrastructure\scripts
-.\provision.ps1
-
-# 2. API local
-cd ..\..\backend\ingestion-api
+# API
+cd backend\ingestion-api
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-$env:PYTHONPATH = "."
-uvicorn app.main:app --reload --port 8000
+$env:Path = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin;" + $env:Path
+uvicorn app.main:app --port 8000
 ```
 
 ## Estructura
 
-- `backend/ingestion-api/` — API de ingesta (validar → persistir → acuse)
-- `infrastructure/scripts/` — aprovisionamiento y apagado
-- `contracts/api/` — JSON Schema del contrato
-- `docs/` — arquitectura, red, roles, despliegue
-- `samples/` — payloads de prueba
+- `backend/ingestion-api/` — recepción inmediata (sin scoring)
+- `backend/scoring-engine/` — reglas + Cosmos + cola `cases`
+- `backend/case-service/` — apertura de casos + API analistas
+- `backend/explanation-service/` — plantillas deterministas
+- `backend/document-service/` — SAS + extracción
+- `frontend/analyst-dashboard/` — UI React
+- `infrastructure/` — Bicep, scripts, monitoreo
+- `contracts/` — OpenAPI / JSON Schema
+- `docs/` — arquitectura y despliegue
 
-## Requisitos de la API (semana 1)
+## Principio de desacoplamiento
 
-La API **no** calcula scores ni abre casos. Solo:
-
-1. Recibe el payload  
-2. Valida el contrato  
-3. Persiste la transacción cruda  
-4. Responde acuse (`202`)  
-
-Punto de inserción para mensajería (semana 2): `EventPublisher` en `app/infrastructure/messaging.py`.
+El cliente **nunca** espera el scoring. La API valida, publica `TransactionReceived` y responde **202**.

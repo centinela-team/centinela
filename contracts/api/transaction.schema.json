@@ -1,68 +1,79 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://centinela.local/contracts/transaction.schema.json",
-  "title": "Transaction",
-  "description": "Contrato de transacción Centinela (Semana 1). Inmutable sin coordinación multi-componente.",
+  "$id": "https://centinela.local/contracts/api/transaction.schema.json",
+  "title": "TransactionSubmit",
+  "description": "Contrato canónico Centinela — alineado a MASTER_AI_PROMPT y docs/sprint/semana1/contrato-transaccion.md",
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "transaction_id",
-    "account_id",
+    "transactionId",
+    "accountId",
     "amount",
     "currency",
-    "occurred_at",
-    "latitude",
-    "longitude",
-    "merchant_id",
-    "merchant_category"
+    "type",
+    "location"
   ],
   "properties": {
-    "transaction_id": {
+    "transactionId": {
       "type": "string",
       "format": "uuid",
-      "description": "Identificador único generado por el emisor. Duplicados se tratan según política de idempotencia."
+      "description": "UUID v4 generado por la fintech. Clave de idempotencia y MessageId."
     },
-    "account_id": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 64,
-      "description": "Cuenta origen. Partición lógica para historial (semana 2)."
-    },
-    "amount": {
-      "type": "string",
-      "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
-      "description": "Monto como decimal en string (evita float). Unidad: minor units implícitas por currency (2 decimales)."
-    },
-    "currency": {
-      "type": "string",
-      "pattern": "^[A-Z]{3}$",
-      "description": "Código ISO 4217."
-    },
-    "occurred_at": {
-      "type": "string",
-      "format": "date-time",
-      "description": "Instante en UTC (sufijo Z). El servidor rechaza marcas futuras. Origen: cliente; el servidor registra received_at propio."
-    },
-    "latitude": {
-      "type": "number",
-      "minimum": -90,
-      "maximum": 90
-    },
-    "longitude": {
-      "type": "number",
-      "minimum": -180,
-      "maximum": 180
-    },
-    "merchant_id": {
+    "accountId": {
       "type": "string",
       "minLength": 1,
       "maxLength": 64
     },
-    "merchant_category": {
+    "clientObservedAt": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 64,
-      "description": "Categoría / MCC lógico para regla de comercio de riesgo."
+      "format": "date-time",
+      "description": "Opcional. Solo diagnóstico; no es fuente de reglas de velocidad."
+    },
+    "correlationId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Opcional. Si no llega, el servidor genera uno."
+    },
+    "amount": {
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]{1,4})?$",
+      "description": "Decimal exacto como string. Hasta 4 decimales. No float."
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["PURCHASE", "TRANSFER", "WITHDRAWAL"]
+    },
+    "merchant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["merchantId", "categoryCode"],
+      "properties": {
+        "merchantId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "categoryCode": { "type": "string", "minLength": 1, "maxLength": 16 },
+        "name": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["latitude", "longitude"],
+      "properties": {
+        "latitude": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]{1,6})?$",
+          "description": "Decimal string, hasta 6 decimales."
+        },
+        "longitude": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]{1,6})?$"
+        },
+        "city": { "type": "string", "maxLength": 64 },
+        "country": { "type": "string", "pattern": "^[A-Z]{2}$" }
+      }
     }
   }
 }

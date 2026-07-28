@@ -1,149 +1,128 @@
-# README de despliegue — Centinela (Semana 1)
+# README de despliegue — Centinela
 
-Permite a un tercero clonar el repositorio y levantar el sistema de ingesta.
+Guía para un tercero: clonar, configurar y dejar el pipeline operativo
+(API → Service Bus → scoring → casos → UI).
 
 ## Prerrequisitos
 
-1. Cuenta Azure con suscripción activa y `az login`.
-2. [Azure CLI](https://aka.ms/installazurecliwindows) ≥ 2.60.
-3. Python 3.11+.
-4. PowerShell 5.1+ (Windows) o PowerShell 7.
+- Azure CLI (`az login`) + suscripción Students con RG `rg-centinela-dev`
+- Python 3.11+, Node 20+, PowerShell
+- ODBC Driver 18 (solo si usas Azure SQL): `winget install Microsoft.msodbcsql.18`
+- PATH con Azure CLI: `C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin`
 
-## 1. Clonar
+## Nombres reales actuales (RG)
 
-```bash
-git clone <url-del-repo> centinela
+| Recurso | Nombre |
+|---|---|
+| Storage | `stcentineladev03` |
+| Service Bus | `sb-centineladev03` |
+| Key Vault | `kv-centineladev03` |
+| Cosmos | `cosmos-centineladev03` (East US 2) |
+| SQL | `sql-centineladev05.database.windows.net` / `sqldb-centinela-dev` (Canada Central) |
+| App Insights | `appi-centinela-dev` |
+
+> Bicep canónico usa `*02` / `sb-centinela-dev`. El código local apunta a `*03`/`*05`.
+
+## 1. Clonar e infraestructura
+
+```powershell
+git clone https://github.com/centinela-team/centinela.git
 cd centinela
-```
-
-## 2. Parámetros
-
-Editar `infrastructure/scripts/params.ps1` si hace falta (región, sufijo de unicidad).
-Los nombres de recursos **no** se hardcodean en el cuerpo de `provision.ps1`.
-
-## 3. Aprovisionar infraestructura
-
-```powershell
+az account set --subscription bcc499f4-13e1-4b24-a323-625c216bfa94
 cd infrastructure\scripts
-.\provision.ps1
+# Si el RG ya existe, no reprovisiones desde cero; usa complete-infra.ps1 / azuredeploy.sh del equipo
 ```
 
-Al finalizar, el script imprime el resumen (RG, Storage, Service Bus, Web App, etc.).
-
-Si el Storage ya está bloqueado a la VNet y necesitas operar desde tu IP durante el setup:
+SQL (si no existe):
 
 ```powershell
-.\provision.ps1 -SkipNetworkLockdown
+.\provision-sql.ps1   # default: canadacentral / sql-centineladev05
+# Luego:
+$env:SQL_SERVER_FQDN = "sql-centineladev05.database.windows.net"
+python .\apply-sql-schema.py
 ```
 
-## 4. Configurar entorno local (opcional)
+## 2. Observabilidad (opcional)
 
 ```powershell
-copy .env.example .env
-# Completar STORAGE_ACCOUNT_NAME, SERVICE_BUS_NAMESPACE, etc.
-# Para desarrollo local sin MI: AZURE_STORAGE_CONNECTION_STRING=<cadena del portal>
+.\setup-observability.ps1
+# Exportar APPLICATIONINSIGHTS_CONNECTION_STRING a la sesión
+.\setup-observability.ps1 -CreateAlert -Email tu@correo.edu.co
 ```
 
-Autenticación local recomendada:
-
-```powershell
-az login
-az account set --subscription <id>
-```
-
-`DefaultAzureCredential` usará tu sesión de Azure CLI.
-
-## 5. Ejecutar la API en local
+## 3. API de ingesta
 
 ```powershell
 cd backend\ingestion-api
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-$env:PYTHONPATH = "."
-uvicorn app.main:app --reload --port 8000
+$env:Path = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin;" + $env:Path
+$env:STORAGE_ACCOUNT_NAME = "stcentineladev03"
+$env:SERVICE_BUS_NAMESPACE = "sb-centineladev03.servicebus.windows.net"
+uvicorn app.main:app --port 8000
 ```
 
-Health check: `GET http://localhost:8000/api/v1/health`
+Prueba: `samples/transaction-valid.json` → `202`; `transaction-invalid.json` → `422`.
 
-## 6. Validar ingesta
+## 4. Scoring
 
 ```powershell
-# Válida → 202
-curl -X POST http://localhost:8000/api/v1/transactions `
-  -H "Content-Type: application/json" `
-  -d "@..\..\samples\transaction-valid.json"
-
-# Inválida → 422
-curl -X POST http://localhost:8000/api/v1/transactions `
-  -H "Content-Type: application/json" `
-  -d "@..\..\samples\transaction-invalid.json"
+cd backend\scoring-engine
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+$env:COSMOS_DB_ENDPOINT = "https://cosmos-centineladev03.documents.azure.com:443/"
+$env:SERVICE_BUS_NAMESPACE = "sb-centineladev03.servicebus.windows.net"
+$env:SCORING_THRESHOLD = "60"
+python worker.py
 ```
 
-Recuperar por id:
+Fraude de demo: `samples/transaction-fraud.json`.
+
+## 5. Casos + explicador
 
 ```powershell
-curl http://localhost:8000/api/v1/transactions/11111111-1111-4111-8111-111111111111
+cd backend\case-service
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+$env:SERVICE_BUS_NAMESPACE = "sb-centineladev03.servicebus.windows.net"
+# SQLite (demo) o Azure SQL:
+$env:CASE_STORE = "sqlite"
+$env:SQLITE_PATH = "$PWD\data\cases.db"
+# $env:CASE_STORE = "azure_sql"
+# $env:SQL_SERVER_FQDN = "sql-centineladev05.database.windows.net"
+python worker.py
+# API analistas:
+$env:UPLOAD_MODE = "local"
+uvicorn api:app --port 8010
 ```
 
-## 7. Cargar documento de evidencia
+## 6. Dashboard
 
 ```powershell
-curl -X POST http://localhost:8000/api/v1/documents `
-  -F "case_id=case-demo-001" `
-  -F "file=@.\evidencia.pdf"
+cd frontend\analyst-dashboard
+npm ci
+npm run dev
 ```
 
-El nombre en destino lo genera el sistema (`cases/{case_id}/.../{uuid}.pdf`).
+Abrir http://localhost:5173 (proxy a `:8010`).
 
-## 8. Validar cola Service Bus
+## 7. CI/CD
 
-```powershell
-cd infrastructure\scripts
-.\validate-queue.ps1
-```
+Push a `main` ejecuta `.github/workflows/ci.yml` (tests + build Docker + push GHCR).
+Deploy Azure: variable `ENABLE_AZURE_DEPLOY=true` + secret `AZURE_CREDENTIALS` (hoy gated por cuota).
 
-## 9. Desplegar a App Service
-
-```powershell
-cd backend\ingestion-api
-Compress-Archive -Path * -DestinationPath ..\..\deploy.zip -Force
-az webapp deploy `
-  --resource-group rg-centinela-dev `
-  --name app-centinela-dev-03 `
-  --src-path ..\..\deploy.zip `
-  --type zip
-```
-
-(Ajusta el nombre de la Web App al que imprimió `provision.ps1`.)
-
-## 10. Apagado al cierre de jornada
+## 8. Apagado / ahorro de crédito
 
 ```powershell
 cd infrastructure\scripts
 .\shutdown.ps1
-# Máximo ahorro (elimina el plan B1):
-.\shutdown.ps1 -DeletePlan
+# SQL Basic consume crédito: borrar servidor si no se usa
+# az sql server delete -g rg-centinela-dev -n sql-centineladev05 --yes
 ```
 
-## Tabla de códigos de estado
+## Sustentación
 
-| Escenario | Código |
-|---|---|
-| Transacción aceptada | 202 |
-| Contrato inválido / campos extra / tipos | 422 |
-| Conflictos de idempotencia | 409 |
-| Transacción no encontrada | 404 |
-| Documento inválido (tipo/tamaño) | 422 |
-| Documento almacenado | 201 |
-| Almacén no disponible | 503 |
-| Health | 200 |
-
-## Documentación relacionada
-
-- [Convención de nombres](../naming-convention.md)
-- [Contrato de transacción](../architecture/transaction-contract.md)
-- [Idempotencia](../architecture/idempotency.md)
-- [Red y aislamiento](../architecture/network.md)
-- [Roles y permisos](../architecture/roles-permissions.md)
-- [Garantías de cola](../architecture/queue-guarantees.md)
+Checklist: [docs/sprint/sustentacion-checklist.md](../sprint/sustentacion-checklist.md)

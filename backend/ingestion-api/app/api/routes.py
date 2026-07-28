@@ -1,4 +1,4 @@
-"""Rutas HTTP de la API de ingesta."""
+"""Rutas HTTP de la API de ingesta — MASTER Fase 2."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from app.domain.exceptions import (
 )
 from app.domain.models import DocumentUploadResult, TransactionAccepted, TransactionIn
 from app.infrastructure.blob_store import BlobEvidenceStore, BlobTransactionStore
-from app.infrastructure.messaging import NullEventPublisher
+from app.infrastructure.messaging import build_event_publisher
 from app.use_cases.ingest_transaction import IngestTransaction
 from app.use_cases.upload_document import UploadEvidenceDocument
 
@@ -26,7 +26,7 @@ router = APIRouter()
 
 def get_ingest_use_case(settings: Annotated[Settings, Depends(get_settings)]) -> IngestTransaction:
     store = BlobTransactionStore(settings)
-    publisher = NullEventPublisher()  # Semana 2: reemplazar por ServiceBusEventPublisher
+    publisher = build_event_publisher(settings)
     return IngestTransaction(store=store, publisher=publisher, settings=settings)
 
 
@@ -44,7 +44,7 @@ def health() -> dict[str, str]:
     response_model=TransactionAccepted,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Ingestar transacción",
-    description="Valida el contrato, persiste la transacción cruda y responde acuse. Sin scoring.",
+    description="Valida, persiste, publica TransactionReceived y responde 202. Sin scoring.",
 )
 def create_transaction(
     payload: TransactionIn,
@@ -53,7 +53,7 @@ def create_transaction(
     try:
         return use_case.execute(payload)
     except ValidationRejected as exc:
-        raise_http(status.HTTP_422_UNPROCESSABLE_ENTITY, exc)
+        raise_http(status.HTTP_400_BAD_REQUEST, exc)
     except IdempotencyConflict as exc:
         raise_http(status.HTTP_409_CONFLICT, exc)
     except PersistenceError as exc:
@@ -104,7 +104,6 @@ async def upload_document(
 
 
 def raise_http(status_code: int, exc: DomainError) -> None:
-    """Convierte error de dominio en HTTPException sin filtrar detalles internos."""
     from fastapi import HTTPException
 
     raise HTTPException(

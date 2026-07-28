@@ -1,0 +1,124 @@
+name: CI Centinela
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Tests ingestion-api
+        working-directory: backend/ingestion-api
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pytest -q
+
+      - name: Tests scoring-engine
+        working-directory: backend/scoring-engine
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pytest -q
+
+      - name: Tests explanation-service
+        working-directory: backend/explanation-service
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pytest -q
+
+      - name: Tests document-service
+        working-directory: backend/document-service
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pytest -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/analyst-dashboard/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend/analyst-dashboard
+        run: |
+          npm ci
+          npm run build
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Meta tags
+        id: meta
+        run: |
+          OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          SHA='${{ github.sha }}'
+          echo "api=${{ env.REGISTRY }}/${OWNER}/centinela-ingestion-api" >> "$GITHUB_OUTPUT"
+          echo "scoring=${{ env.REGISTRY }}/${OWNER}/centinela-scoring-engine" >> "$GITHUB_OUTPUT"
+          echo "tag=${SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push ingestion-api
+        uses: docker/build-push-action@v6
+        with:
+          context: backend/ingestion-api
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ steps.meta.outputs.api }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.api }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push scoring-engine
+        uses: docker/build-push-action@v6
+        with:
+          context: backend/scoring-engine
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ steps.meta.outputs.scoring }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.scoring }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-azure:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_AZURE_DEPLOY == 'true'
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Placeholder deploy
+        run: |
+          echo "Deploy Azure gated por ENABLE_AZURE_DEPLOY."
+          echo "Ver docs/architecture/cicd-platform.md"

@@ -1,23 +1,28 @@
-"""Caso de uso: ingesta de transacción."""
+"""Caso de uso: ingesta de transacción (MASTER Fase 2).
+
+Secuencia: recibir → validar → persistir → publicar TransactionReceived → 202.
+El cliente NUNCA espera el scoring.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
+from uuid import UUID
 
 from app.config import Settings
-from app.domain.exceptions import IdempotencyConflict, ValidationRejected
-from app.domain.models import TransactionAccepted, TransactionIn, payload_fingerprint
+from app.domain.exceptions import IdempotencyConflict, PersistenceError
+from app.domain.models import (
+    TransactionAccepted,
+    TransactionIn,
+    ensure_correlation_id,
+    payload_fingerprint,
+)
 from app.infrastructure.blob_store import BlobTransactionStore
 from app.infrastructure.messaging import EventPublisher
 
 
 class IngestTransaction:
-    """Recibir → validar → persistir → [publicar*] → acuse.
-
-    * publicar es el punto de inserción de semana 2 (EventPublisher).
-    """
-
     def __init__(
         self,
         store: BlobTransactionStore,
@@ -29,38 +34,61 @@ class IngestTransaction:
         self._settings = settings
 
     def execute(self, transaction: TransactionIn) -> TransactionAccepted:
-        self._reject_future_timestamp(transaction.occurred_at)
-
         received_at = datetime.now(timezone.utc)
+        occurred_at = received_at  # clock autoritativo del servidor (contrato sprint)
+        correlation_id = ensure_correlation_id(transaction.correlationId)
+
         body = transaction.model_dump(mode="json")
         fingerprint = payload_fingerprint(body)
 
-        existing = self._store.get_raw(str(transaction.transaction_id))
+        existing = self._store.get_raw(str(transaction.transactionId))
         if existing is not None:
             if existing.get("fingerprint") == fingerprint:
                 return TransactionAccepted(
-                    transaction_id=transaction.transaction_id,
-                    received_at=datetime.fromisoformat(existing["received_at"]),
+                    transactionId=transaction.transactionId,
+                    correlationId=UUID(existing["event"]["correlationId"]),
+                    status="ACCEPTED_FOR_ANALYSIS",
                 )
-            raise IdempotencyConflict(str(transaction.transaction_id))
+            raise IdempotencyConflict(str(transaction.transactionId))
+
+        event: dict[str, Any] = {
+            "eventType": "TransactionReceived",
+            "schemaVersion": "1.0",
+            "transactionId": str(transaction.transactionId),
+            "accountId": transaction.accountId,
+            "correlationId": str(correlation_id),
+            "occurredAt": occurred_at.isoformat().replace("+00:00", "Z"),
+            "receivedAt": received_at.isoformat().replace("+00:00", "Z"),
+            "clientObservedAt": (
+                transaction.clientObservedAt.isoformat().replace("+00:00", "Z")
+                if transaction.clientObservedAt
+                else None
+            ),
+            "amount": transaction.amount,
+            "currency": transaction.currency,
+            "type": transaction.type.value,
+            "merchant": transaction.merchant.model_dump(mode="json") if transaction.merchant else None,
+            "location": transaction.location.model_dump(mode="json"),
+        }
 
         envelope: dict[str, Any] = {
-            "transaction": body,
             "fingerprint": fingerprint,
             "received_at": received_at.isoformat(),
+            "event": event,
+            "raw": body,
             "schema_version": "1.0",
         }
-        self._store.put_raw(str(transaction.transaction_id), envelope)
 
-        # Punto de inserción semana 2: publicar evento sin bloquear de más
-        self._publisher.publish_transaction_ingested(envelope)
+        try:
+            self._store.put_raw(str(transaction.transactionId), envelope)
+        except PersistenceError:
+            raise
+
+        # Publicación no bloquea más allá de confirmar encolado
+        self._publisher.publish_transaction_received(event)
 
         return TransactionAccepted(
-            transaction_id=transaction.transaction_id,
-            received_at=received_at,
+            transactionId=transaction.transactionId,
+            correlationId=correlation_id,
+            status="ACCEPTED_FOR_ANALYSIS",
         )
-
-    def _reject_future_timestamp(self, occurred_at: datetime) -> None:
-        skew = timedelta(seconds=self._settings.future_clock_skew_seconds)
-        if occurred_at > datetime.now(timezone.utc) + skew:
-            raise ValidationRejected("occurred_at no puede estar en el futuro.")

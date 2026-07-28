@@ -59,6 +59,13 @@ env/
 .mypy_cache/
 .ruff_cache/
 
+# Local case store fallback
+backend/case-service/data/
+*.db
+
+# Frontend TS incremental
+*.tsbuildinfo
+
 # Terraform
 .terraform/
 .terraform.lock.hcl

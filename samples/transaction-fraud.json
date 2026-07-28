@@ -1,0 +1,18 @@
+{
+  "transactionId": "22222222-2222-4222-8222-222222222222",
+  "accountId": "ACC-fraud-001",
+  "amount": "4200000.0000",
+  "currency": "COP",
+  "type": "PURCHASE",
+  "merchant": {
+    "merchantId": "M-RISK",
+    "categoryCode": "7995",
+    "name": "Casino Alto Riesgo"
+  },
+  "location": {
+    "latitude": "40.416800",
+    "longitude": "-3.703800",
+    "city": "Madrid",
+    "country": "ES"
+  }
+}

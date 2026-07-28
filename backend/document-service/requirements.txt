@@ -1,0 +1,5 @@
+azure-identity==1.19.0
+azure-storage-blob==12.24.0
+pypdf==5.1.0
+pytest==8.3.4
+# Opcional: azure-ai-documentintelligence cuando haya cuota Free S0

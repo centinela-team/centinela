@@ -106,8 +106,8 @@ class BlobEvidenceStore:
             raise PersistenceError("No se pudo almacenar el documento.") from exc
 
         return {
-            "case_id": case_id,
-            "object_name": object_name,
-            "content_type": content_type,
-            "size_bytes": len(content),
+            "caseId": case_id,
+            "objectName": object_name,
+            "contentType": content_type,
+            "sizeBytes": len(content),
         }
