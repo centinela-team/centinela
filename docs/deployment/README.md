@@ -20,8 +20,24 @@ Guía para un tercero: clonar, configurar y dejar el pipeline operativo
 | Cosmos | `cosmos-centineladev03` (East US 2) |
 | SQL | `sql-centineladev05.database.windows.net` / `sqldb-centinela-dev` (Canada Central) |
 | App Insights | `appi-centinela-dev` |
+| ACR | `acrcentineladev05` |
+| Container Apps env | `cae-centinela-dev` |
+| API (Azure) | `ca-centinela-api-dev` |
+| Scoring (Azure) | `ca-centinela-scoring-dev` |
 
-> Bicep canónico usa `*02` / `sb-centinela-dev`. El código local apunta a `*03`/`*05`.
+> Bicep canónico usa `*02` / `sb-centinela-dev`. El código y el RG usan `*03`/`*05`.
+
+### URL en vivo (verificada)
+
+```text
+https://ca-centinela-api-dev.livelyground-d2f1acd6.eastus.azurecontainerapps.io/v1/health
+```
+
+```powershell
+# Prueba rápida
+Invoke-RestMethod https://ca-centinela-api-dev.livelyground-d2f1acd6.eastus.azurecontainerapps.io/v1/health
+# POST samples/transaction-valid.json → 202
+```
 
 ## 1. Clonar e infraestructura
 
@@ -109,20 +125,33 @@ npm run dev
 
 Abrir http://localhost:5173 (proxy a `:8010`).
 
-## 7. CI/CD
+## 7. CI/CD y Container Apps
 
-Push a `main` ejecuta `.github/workflows/ci.yml` (tests + build Docker + push GHCR).
-Deploy Azure: variable `ENABLE_AZURE_DEPLOY=true` + secret `AZURE_CREDENTIALS` (hoy gated por cuota).
+Push a `main` ejecuta `.github/workflows/ci.yml` (tests + build Docker).
+
+Imágenes en ACR: `acrcentineladev05.azurecr.io/centinela-ingestion-api:latest` y `.../centinela-scoring-engine:latest`.
+
+Redeploy / actualizar:
+
+```powershell
+.\infrastructure\scripts\deploy-container-apps.ps1 `
+  -ApiImage acrcentineladev05.azurecr.io/centinela-ingestion-api:latest `
+  -ScoringImage acrcentineladev05.azurecr.io/centinela-scoring-engine:latest
+```
+
+Evidencia de escala: [docs/sprint/evidencia-escalado.md](../sprint/evidencia-escalado.md)
 
 ## 8. Apagado / ahorro de crédito
 
 ```powershell
 cd infrastructure\scripts
 .\shutdown.ps1
-# SQL Basic consume crédito: borrar servidor si no se usa
+az containerapp update -g rg-centinela-dev -n ca-centinela-scoring-dev --min-replicas 0
+# SQL / ACR Basic consumen crédito fijo — borrar si no hay demo
 # az sql server delete -g rg-centinela-dev -n sql-centineladev05 --yes
 ```
 
 ## Sustentación
 
 Checklist: [docs/sprint/sustentacion-checklist.md](../sprint/sustentacion-checklist.md)
+Cierre DoD: [docs/sprint/cierre-dod.md](../sprint/cierre-dod.md)
