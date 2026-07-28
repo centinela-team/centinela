@@ -1,0 +1,19 @@
+{
+  "transactionId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "accountId": "ACC-fraud-001",
+  "amount": "85000.0000",
+  "currency": "COP",
+  "type": "PURCHASE",
+  "clientObservedAt": "2026-07-28T15:00:00Z",
+  "merchant": {
+    "merchantId": "merchant-bog-01",
+    "categoryCode": "5942",
+    "name": "Electronics Bogota"
+  },
+  "location": {
+    "latitude": "4.711000",
+    "longitude": "-74.072100",
+    "city": "Bogota",
+    "country": "CO"
+  }
+}

@@ -33,10 +33,12 @@ Guía para un tercero: clonar, configurar y dejar el pipeline operativo
 https://ca-centinela-api-dev.livelyground-d2f1acd6.eastus.azurecontainerapps.io/v1/health
 ```
 
+Pruebas copy-paste (smoke, 202/422, fraude, carga): ver **[README.md](../../README.md)** raíz.
+
 ```powershell
-# Prueba rápida
-Invoke-RestMethod https://ca-centinela-api-dev.livelyground-d2f1acd6.eastus.azurecontainerapps.io/v1/health
-# POST samples/transaction-valid.json → 202
+cd infrastructure\scripts
+.\smoke-test.ps1
+.\fraud-demo.ps1
 ```
 
 ## 1. Clonar e infraestructura

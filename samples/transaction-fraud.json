@@ -4,6 +4,7 @@
   "amount": "4200000.0000",
   "currency": "COP",
   "type": "PURCHASE",
+  "clientObservedAt": "2026-07-28T15:05:00Z",
   "merchant": {
     "merchantId": "M-RISK",
     "categoryCode": "7995",
