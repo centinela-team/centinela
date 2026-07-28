@@ -24,6 +24,8 @@ Guía para un tercero: clonar, configurar y dejar el pipeline operativo
 | Container Apps env | `cae-centinela-dev` |
 | API (Azure) | `ca-centinela-api-dev` |
 | Scoring (Azure) | `ca-centinela-scoring-dev` |
+| Cases API | `ca-centinela-cases-dev` |
+| Cases worker | `ca-centinela-cases-worker-dev` |
 
 > Bicep canónico usa `*02` / `sb-centinela-dev`. El código y el RG usan `*03`/`*05`.
 

@@ -13,23 +13,27 @@ El cliente **nunca** espera el scoring: la API valida, publica en Service Bus y 
 |---|---|
 | API ingesta (`POST /v1/transactions` → 202) | **Desplegada** en Container Apps |
 | Scoring (4 reglas, umbral 60) | **Desplegado** en Container Apps |
+| Cases worker + API analistas | **Desplegados** (Azure SQL + explicador) |
 | Service Bus + Storage + Cosmos + SQL | Listo (`*03` / SQL `*05`) |
-| Casos + explicador + documentos | Listo (local / workers) |
-| Dashboard analistas (React) | Listo (local) |
+| Dashboard analistas (React) | Listo (local; apunta a Cases API) |
 | CI GitHub Actions + ACR | Listo |
 | Alerta `scoring_fail` | Configurada en Azure |
+| Crédito / DoD | Cerrado (meta &lt; 60) |
 
-### URL en vivo
+### URLs en vivo
 
 ```text
-https://ca-centinela-api-dev.livelyground-d2f1acd6.eastus.azurecontainerapps.io
+Ingesta: https://ca-centinela-api-dev.livelyground-d2f1acd6.eastus.azurecontainerapps.io
+Casos:   https://ca-centinela-cases-dev.livelyground-d2f1acd6.eastus.azurecontainerapps.io
 ```
 
 | Método | Ruta | Esperado |
 |---|---|---|
-| `GET` | `/v1/health` | `200` |
+| `GET` | `/v1/health` (ingesta) | `200` |
 | `POST` | `/v1/transactions` (válido) | `202` + `ACCEPTED_FOR_ANALYSIS` |
 | `POST` | `/v1/transactions` (inválido) | `422` |
+| `GET` | `/health` (casos) | `200` |
+| `GET` | `/v1/cases` | `200` lista JSON |
 
 ---
 
@@ -137,11 +141,22 @@ cd infrastructure\scripts
 # Requiere az login. Muestra ActiveMessageCount antes/después.
 ```
 
-### 7) Ver logs en Azure
+### 7) Ver casos abiertos (Azure)
+
+Tras `fraud-demo.ps1` (esperar ~1–2 min):
+
+```powershell
+$cases = "https://ca-centinela-cases-dev.livelyground-d2f1acd6.eastus.azurecontainerapps.io"
+Invoke-RestMethod "$cases/health"
+Invoke-RestMethod "$cases/v1/cases"
+```
+
+### 8) Ver logs en Azure
 
 ```powershell
 az containerapp logs show -g rg-centinela-dev -n ca-centinela-api-dev --type console --tail 50
 az containerapp logs show -g rg-centinela-dev -n ca-centinela-scoring-dev --type console --tail 50
+az containerapp logs show -g rg-centinela-dev -n ca-centinela-cases-worker-dev --type console --tail 50
 ```
 
 Busca `transactionId` / `correlationId` del 202.
@@ -150,7 +165,7 @@ Busca `transactionId` / `correlationId` del 202.
 
 ## Opción B — Pipeline local completo
 
-Útil para UI de casos, documentos y explicador (aún no desplegados como Container Apps).
+Útil para desarrollo local o UI React contra Cases API en Azure.
 
 Variables comunes (otra ventana PowerShell por proceso):
 
@@ -281,7 +296,7 @@ Campos relevantes (camelCase, `extra=forbid`):
 | Cosmos | `cosmos-centineladev03` (East US 2) |
 | SQL | `sql-centineladev05` / `sqldb-centinela-dev` (Canada Central) |
 | ACR | `acrcentineladev05` |
-| Container Apps | `ca-centinela-api-dev`, `ca-centinela-scoring-dev` |
+| Container Apps | `ca-centinela-api-dev`, `ca-centinela-scoring-dev`, `ca-centinela-cases-dev`, `ca-centinela-cases-worker-dev` |
 | App Insights | `appi-centinela-dev` |
 
 Detalle de despliegue: [docs/deployment/README.md](docs/deployment/README.md)
@@ -293,7 +308,6 @@ Detalle de despliegue: [docs/deployment/README.md](docs/deployment/README.md)
 ```powershell
 cd infrastructure\scripts
 .\shutdown.ps1
-az containerapp update -g rg-centinela-dev -n ca-centinela-scoring-dev --min-replicas 0
 # SQL/ACR Basic: borrar si no hay demo
 # az sql server delete -g rg-centinela-dev -n sql-centineladev05 --yes
 ```

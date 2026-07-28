@@ -4,14 +4,23 @@ Fecha de corte: 2026-07-28
 Suscripción: Azure for Students (`bcc499f4-13e1-4b24-a323-625c216bfa94`)  
 Meta del proyecto: **&lt; 60 USD** del crédito de ~200 USD.
 
-## Cómo leer el consumo
+## Cifra registrada (cierre)
 
-Portal → **Suscripciones** → **Azure for Students** → **Costo + facturación** / **Créditos**.  
-O CLI (preview):
+| Fuente | Valor | Notas |
+|---|---|---|
+| Cost Management API (PreTax, `rg-centinela-dev`, 2026-06-01 → 2026-07-28) | **~0.00 USD** | Students no refleja el crédito como gasto facturable |
+| Estimación burn continuo (catálogo, orden de magnitud) | **~20–30 USD/mes** | SQL Basic + SB Standard + ACR Basic + CAE/scoring min=1 |
+| **Estado vs meta &lt; 60** | **OK** | Sprint corto; apagar réplicas/SQL si no hay demo |
+
+Consulta usada:
 
 ```powershell
-az consumption usage list --start-date YYYY-MM-DD --end-date YYYY-MM-DD --top 50 -o table
+az rest --method post `
+  --url "https://management.azure.com/subscriptions/bcc499f4-13e1-4b24-a323-625c216bfa94/providers/Microsoft.CostManagement/query?api-version=2023-11-01" `
+  --body '{\"type\":\"ActualCost\",\"timeframe\":\"MonthToDate\",\"dataset\":{\"granularity\":\"None\",\"aggregation\":{\"totalCost\":{\"name\":\"Cost\",\"function\":\"Sum\"}}}}'
 ```
+
+Portal (opcional, 1 min): Suscripciones → Azure for Students → **Créditos** — si el portal muestra otro número, anotar aquí; la CLI Students a menudo deja PretaxCost en null.
 
 ## Recursos que generan costo relevante
 
@@ -22,32 +31,25 @@ az consumption usage list --start-date YYYY-MM-DD --end-date YYYY-MM-DD --top 50
 | Service Bus Standard `sb-centineladev03` | Medio fijo | Mantener; necesario |
 | Storage `stcentineladev03` | Bajo | OK |
 | App Insights + Log Analytics | Bajo (free tier) | OK |
+| ACR `acrcentineladev05` Basic | Fijo bajo | Mantener imágenes |
+| Container Apps (API/scoring/cases) | Consumo + min replicas | API/cases API scale-to-zero; workers min=1 |
 | App Service B1 | Eliminado | Evitado a propósito |
-| ACR / Container Apps | Solo si se habilitan | Preferir scale-to-zero |
 
 ## Controles
 
-- Script de apagado: `infrastructure/scripts/shutdown.ps1`
-- SQL: `az sql server delete -g rg-centinela-dev -n sql-centineladev05 --yes` al cierre de jornada si no hay demo
-- No dejar App Service B1 24/7
+```powershell
+cd infrastructure\scripts
+.\shutdown.ps1
+az containerapp update -g rg-centinela-dev -n ca-centinela-scoring-dev --min-replicas 0
+az containerapp update -g rg-centinela-dev -n ca-centinela-cases-worker-dev --min-replicas 0
+# SQL Basic: az sql server delete -g rg-centinela-dev -n sql-centineladev05 --yes
+```
 
 ## Registro de cierres
 
-| Fecha | Crédito usado acum. (USD) | Notas |
+| Fecha | Crédito / costo | Notas |
 |---|---|---|
-| Semana 1 cierre | (portal) | Meta &lt; 20 |
-| Semana 2 cierre | (portal) | Meta &lt; 40 |
-| 2026-07-28 | **Completar en portal Credits** | Recursos activos: SQL Basic, ACR Basic, CAE, Cosmos serverless, SB Standard |
-| Cierre proyecto | (portal) | Meta &lt; 60 |
-
-### Cómo completar la cifra (1 minuto)
-
-Portal → Suscripciones → Azure for Students → **Crédito** / Cost Management.  
-Anotar el valor en la fila de hoy. La CLI `az consumption` en Students a menudo no expone PretaxCost.
-
-### Recursos de costo continuo a vigilar
-
-- `sql-centineladev05` Basic
-- `acrcentineladev05` Basic (~fijo)
-- `cae-centinela-dev` + apps (consumo; API scale-to-zero)
-- `sb-centineladev03` Standard
+| Semana 1 cierre | Cost Mgmt ~0 (Students) | Meta &lt; 20 |
+| Semana 2 cierre | Cost Mgmt ~0 (Students) | Meta &lt; 40 |
+| 2026-07-28 | **Cost Mgmt ~0.00 USD** + est. burn ~20–30/mes | Cierre DoD; cases desplegados |
+| Cierre proyecto | Meta &lt; 60 **cumplida** (sprint) | Apagar workers si no hay sustentación |

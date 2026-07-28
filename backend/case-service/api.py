@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from sqlite_repository import SqliteCaseRepository
+from azure.identity import DefaultAzureCredential
 
 _ROOT = Path(__file__).resolve().parents[1]
 _DOC_DIR = _ROOT / "document-service"
@@ -31,7 +32,16 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
 
-def build_repo() -> SqliteCaseRepository:
+def build_repo() -> Any:
+    mode = _env("CASE_STORE", "sqlite").lower()
+    if mode == "azure_sql":
+        from repository import CaseRepository
+
+        server = _env("SQL_SERVER_FQDN")
+        database = _env("SQL_DATABASE_NAME", "sqldb-centinela-dev")
+        if not server:
+            raise RuntimeError("SQL_SERVER_FQDN es obligatorio cuando CASE_STORE=azure_sql")
+        return CaseRepository(server=server, database=database, credential=DefaultAzureCredential())
     path = _env("SQLITE_PATH", "./data/cases.db")
     return SqliteCaseRepository(path)
 
