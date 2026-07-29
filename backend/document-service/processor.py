@@ -22,13 +22,33 @@ class DocumentStore(Protocol):
     ) -> None: ...
 
 
+def max_document_bytes() -> int:
+    from extractor import DEFAULT_MAX_DOCUMENT_BYTES
+
+    raw = _env("MAX_DOCUMENT_BYTES", str(DEFAULT_MAX_DOCUMENT_BYTES))
+    try:
+        return int(raw)
+    except ValueError:
+        return DEFAULT_MAX_DOCUMENT_BYTES
+
+
 def analyze_blob_bytes(
     data: bytes,
     content_type: str,
     document_id: UUID,
     store: DocumentStore,
 ) -> dict[str, Any]:
-    from extractor import extract_document
+    from extractor import extract_document, validate_upload
+
+    reason = validate_upload(data, content_type, max_bytes=max_document_bytes())
+    if reason is not None:
+        store.mark_document_status(document_id, "rejected", message=reason)
+        return {
+            "documentId": str(document_id),
+            "status": "rejected",
+            "extractedFields": {},
+            "message": reason,
+        }
 
     store.mark_document_status(document_id, "analyzing")
     credential = None

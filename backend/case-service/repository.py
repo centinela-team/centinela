@@ -357,7 +357,7 @@ class CaseRepository:
                     file_size_bytes = COALESCE(?, file_size_bytes),
                     message = COALESCE(?, message),
                     extracted_fields = COALESCE(?, extracted_fields),
-                    analyzed_at = CASE WHEN ? IN ('ok','error') THEN SYSUTCDATETIME() ELSE analyzed_at END
+                    analyzed_at = CASE WHEN ? IN ('analyzed','error','rejected') THEN SYSUTCDATETIME() ELSE analyzed_at END
                 WHERE document_id = ?
                 """,
                 status,

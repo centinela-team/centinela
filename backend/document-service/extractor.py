@@ -153,6 +153,44 @@ ALLOWED_CONTENT_TYPES = {
     "text/plain",  # demos locales
 }
 
+CONTENT_TYPE_MAGIC: dict[str, bytes] = {
+    "application/pdf": b"%PDF",
+    "image/jpeg": b"\xff\xd8\xff",
+    "image/png": b"\x89PNG\r\n\x1a\n",
+}
+
+DEFAULT_MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
+
+
+def validate_upload(
+    data: bytes,
+    content_type: str,
+    *,
+    max_bytes: int = DEFAULT_MAX_DOCUMENT_BYTES,
+) -> str | None:
+    """Valida tipo declarado, tamaño y bytes reales. Devuelve None si es válido,
+    o el motivo de rechazo. No ejecuta extracción — se llama antes de decidir
+    si corre extract_document."""
+    ctype = (content_type or "").split(";")[0].strip().lower()
+    if ctype not in ALLOWED_CONTENT_TYPES:
+        return f"Tipo no permitido: {content_type}"
+    if not data:
+        return "El archivo está vacío."
+    if len(data) > max_bytes:
+        return f"El archivo excede el tamaño máximo permitido ({max_bytes} bytes)."
+    if ctype == "text/plain":
+        if b"\x00" in data:
+            return "Archivo de texto inválido (bytes nulos detectados)."
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError:
+            return "Archivo de texto no es UTF-8 válido."
+        return None
+    expected_magic = CONTENT_TYPE_MAGIC[ctype]
+    if not data.startswith(expected_magic):
+        return f"El contenido no corresponde al tipo declarado ({content_type})."
+    return None
+
 
 def extract_document(
     data: bytes,

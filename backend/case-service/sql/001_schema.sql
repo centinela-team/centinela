@@ -99,7 +99,7 @@ BEGIN
     file_size_bytes  BIGINT           NULL,
     uploaded_by      NVARCHAR(200)    NOT NULL,
     uploaded_at      DATETIME2(3)     NOT NULL CONSTRAINT DF_doc_uploaded DEFAULT SYSUTCDATETIME(),
-    status           VARCHAR(32)      NOT NULL, -- pending_upload|uploaded|analyzing|analyzed|error
+    status           VARCHAR(32)      NOT NULL, -- pending_upload|uploaded|analyzing|analyzed|error|rejected
     extracted_fields NVARCHAR(MAX)    NULL,
     message          NVARCHAR(1000)   NULL,
     analyzed_at      DATETIME2(3)     NULL

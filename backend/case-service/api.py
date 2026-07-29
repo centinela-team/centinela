@@ -180,9 +180,16 @@ async def upload_document_local(
 
     data = await file.read()
     ctype = (file.content_type or doc["contentType"] or "application/octet-stream").split(";")[0]
-    repo.mark_document_status(document_id, "uploaded", file_size_bytes=len(data))
 
-    from processor import analyze_blob_bytes
+    from processor import analyze_blob_bytes, max_document_bytes
+
+    limit = max_document_bytes()
+    if len(data) > limit:
+        message = f"El archivo excede el tamaño máximo permitido ({limit} bytes)."
+        repo.mark_document_status(document_id, "rejected", file_size_bytes=len(data), message=message)
+        return {"documentId": str(document_id), "status": "rejected", "message": message}
+
+    repo.mark_document_status(document_id, "uploaded", file_size_bytes=len(data))
 
     result = analyze_blob_bytes(data, ctype, document_id, repo)
     return result

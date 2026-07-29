@@ -379,7 +379,7 @@ class SqliteCaseRepository:
         file_size_bytes: Optional[int] = None,
     ) -> None:
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        analyzed_at = now if status in {"analyzed", "error"} else None
+        analyzed_at = now if status in {"analyzed", "error", "rejected"} else None
         fields_json = json.dumps(extracted_fields, ensure_ascii=False) if extracted_fields is not None else None
         with sqlite3.connect(self._path) as conn:
             doc = conn.execute(
