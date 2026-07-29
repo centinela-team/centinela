@@ -39,22 +39,26 @@ const base = "";
 
 const TOKEN_KEY = "centinela_token";
 const ROLE_KEY = "centinela_role";
+const USERNAME_KEY = "centinela_username";
 
-export function getStoredAuth(): { token: string; role: string } | null {
+export function getStoredAuth(): { token: string; role: string; username: string } | null {
   const token = localStorage.getItem(TOKEN_KEY);
   const role = localStorage.getItem(ROLE_KEY);
-  if (!token || !role) return null;
-  return { token, role };
+  const username = localStorage.getItem(USERNAME_KEY);
+  if (!token || !role || !username) return null;
+  return { token, role, username };
 }
 
-export function storeAuth(token: string, role: string): void {
+export function storeAuth(token: string, role: string, username: string): void {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(ROLE_KEY, role);
+  localStorage.setItem(USERNAME_KEY, username);
 }
 
 export function clearAuth(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(ROLE_KEY);
+  localStorage.removeItem(USERNAME_KEY);
 }
 
 function authHeaders(): HeadersInit {
