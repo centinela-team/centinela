@@ -107,3 +107,16 @@ BEGIN
   CREATE INDEX IX_case_document_case ON dbo.case_document(case_id, uploaded_at);
 END
 GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'app_user')
+BEGIN
+  CREATE TABLE dbo.app_user (
+    user_id       UNIQUEIDENTIFIER NOT NULL PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+    username      NVARCHAR(128)    NOT NULL UNIQUE,
+    password_hash NVARCHAR(256)    NOT NULL,
+    role          VARCHAR(32)      NOT NULL CHECK (role IN ('analista','administrador','auditor')),
+    created_at    DATETIME2(3)     NOT NULL CONSTRAINT DF_user_created DEFAULT SYSUTCDATETIME(),
+    is_active     BIT              NOT NULL CONSTRAINT DF_user_active DEFAULT 1
+  );
+END
+GO

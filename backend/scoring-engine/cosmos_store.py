@@ -6,8 +6,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from azure.cosmos import CosmosClient, PartitionKey
-from azure.cosmos.exceptions import CosmosResourceExistsError
+from azure.cosmos.exceptions import CosmosResourceExistsError, CosmosResourceNotFoundError
 from azure.identity import DefaultAzureCredential
+
+CONFIG_PARTITION_KEY = "__config__"
+CONFIG_DOC_ID = "config"
 
 
 class CosmosTransactionStore:
@@ -78,4 +81,25 @@ class CosmosTransactionStore:
         doc["id"] = doc["transactionId"]
         if "accountId" not in doc:
             raise ValueError("accountId requerido como clave de partición")
+        return self.container.upsert_item(doc)
+
+    def get_config_doc(self) -> Optional[dict[str, Any]]:
+        """Documento singleton de configuración runtime (umbral + comercios de riesgo)."""
+        try:
+            return self.container.read_item(item=CONFIG_DOC_ID, partition_key=CONFIG_PARTITION_KEY)
+        except CosmosResourceNotFoundError:
+            return None
+
+    def upsert_config_doc(
+        self, threshold: int, risky_categories: list[str], updated_by: str
+    ) -> dict[str, Any]:
+        doc = {
+            "id": CONFIG_DOC_ID,
+            "accountId": CONFIG_PARTITION_KEY,
+            "docType": "scoring_config",
+            "threshold": threshold,
+            "riskyCategories": risky_categories,
+            "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "updatedBy": updated_by,
+        }
         return self.container.upsert_item(doc)

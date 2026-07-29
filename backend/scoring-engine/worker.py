@@ -12,6 +12,7 @@ from typing import Any
 from azure.identity import DefaultAzureCredential
 from azure.servicebus import ServiceBusClient, ServiceBusMessage
 
+from config_merge import resolve_config
 from cosmos_store import CosmosTransactionStore
 from rules import DEFAULT_THRESHOLD, evaluate_rules
 from telemetry import configure_azure_monitor
@@ -52,8 +53,26 @@ class ScoringWorker:
             container_name=_env("COSMOS_DB_CONTAINER", "transactions"),
             credential=self._credential,
         )
-        self._risky = load_risky_categories()
-        self._threshold = load_threshold()
+        self._env_risky = load_risky_categories()
+        self._env_threshold = load_threshold()
+        self._config_ttl_seconds = int(_env("CONFIG_RELOAD_TTL_SECONDS", "60"))
+        self._config_loaded_at = 0.0
+        self._risky = self._env_risky
+        self._threshold = self._env_threshold
+        self._refresh_config(force=True)
+
+    def _refresh_config(self, force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and (now - self._config_loaded_at) < self._config_ttl_seconds:
+            return
+        try:
+            doc = self._store.get_config_doc()
+        except Exception:  # noqa: BLE001 — Cosmos hiccup no debe tumbar el worker
+            logger.exception("config_reload_fail; usando último valor conocido")
+            self._config_loaded_at = now
+            return
+        self._threshold, self._risky = resolve_config(doc, self._env_threshold, self._env_risky)
+        self._config_loaded_at = now
 
     def ensure(self) -> None:
         ttl_days = int(_env("COSMOS_TTL_DAYS", "30"))
@@ -65,6 +84,7 @@ class ScoringWorker:
             with client.get_queue_receiver(self._q_in, max_wait_time=30) as receiver:
                 logger.info("Listening on %s (threshold=%s)", self._q_in, self._threshold)
                 for msg in receiver:
+                    self._refresh_config()
                     body: dict[str, Any] = {}
                     started = time.perf_counter()
                     try:

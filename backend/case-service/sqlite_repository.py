@@ -60,6 +60,15 @@ CREATE TABLE IF NOT EXISTS case_document (
   message TEXT,
   analyzed_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS app_user (
+  user_id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  is_active INTEGER NOT NULL DEFAULT 1
+);
 """
 
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
@@ -414,3 +423,39 @@ class SqliteCaseRepository:
                 ),
             )
             conn.commit()
+
+    def create_user(self, username: str, password_hash: str, role: str) -> UUID:
+        user_id = uuid4()
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        with sqlite3.connect(self._path) as conn:
+            conn.execute(
+                """
+                INSERT INTO app_user (user_id, username, password_hash, role, created_at, is_active)
+                VALUES (?, ?, ?, ?, ?, 1)
+                """,
+                (str(user_id), username, password_hash, role, now),
+            )
+            conn.commit()
+        return user_id
+
+    def get_user_by_username(self, username: str) -> Optional[dict[str, Any]]:
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT user_id, username, password_hash, role, is_active FROM app_user WHERE username = ?",
+                (username,),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "userId": row["user_id"],
+            "username": row["username"],
+            "passwordHash": row["password_hash"],
+            "role": row["role"],
+            "isActive": bool(row["is_active"]),
+        }
+
+    def count_users(self) -> int:
+        with sqlite3.connect(self._path) as conn:
+            (count,) = conn.execute("SELECT COUNT(*) FROM app_user").fetchone()
+        return count

@@ -368,3 +368,45 @@ class CaseRepository:
                 document_id,
             )
             conn.commit()
+
+    def create_user(self, username: str, password_hash: str, role: str) -> UUID:
+        user_id = uuid4()
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO dbo.app_user (user_id, username, password_hash, role)
+                VALUES (?, ?, ?, ?)
+                """,
+                user_id,
+                username,
+                password_hash,
+                role,
+            )
+            conn.commit()
+        return user_id
+
+    def get_user_by_username(self, username: str) -> Optional[dict[str, Any]]:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT user_id, username, password_hash, role, is_active FROM dbo.app_user WHERE username = ?",
+                username,
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "userId": str(row[0]),
+            "username": row[1],
+            "passwordHash": row[2],
+            "role": row[3],
+            "isActive": bool(row[4]),
+        }
+
+    def count_users(self) -> int:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM dbo.app_user")
+            (count,) = cur.fetchone()
+        return count

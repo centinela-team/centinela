@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from auth import InvalidToken, decode_token, hash_password, issue_token, verify_password
+from config_merge import resolve_config
+from cosmos_config_store import CosmosConfigStore
 from sqlite_repository import SqliteCaseRepository
 from azure.identity import DefaultAzureCredential
+
+MIN_THRESHOLD = 1
+MAX_THRESHOLD = 102  # suma exacta de RULE_POINTS en scoring-engine/rules.py (35+30+17+20)
+
+logger = logging.getLogger("centinela.case-service")
 
 _ROOT = Path(__file__).resolve().parents[1]
 _DOC_DIR = _ROOT / "document-service"
@@ -68,18 +78,115 @@ class DocumentRequest(BaseModel):
     uploadedBy: str = "analyst"
 
 
+class AdminConfigRequest(BaseModel):
+    threshold: int = Field(..., ge=MIN_THRESHOLD, le=MAX_THRESHOLD)
+    riskyCategories: list[str]
+
+    @field_validator("riskyCategories")
+    @classmethod
+    def _validate_categories(cls, v: list[str]) -> list[str]:
+        cleaned = []
+        for c in v:
+            c = c.strip()
+            if not c.isdigit() or not (2 <= len(c) <= 4):
+                raise ValueError(f"categoryCode inválido: {c!r} (esperado código MCC numérico)")
+            cleaned.append(c)
+        return cleaned
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    accessToken: str
+    role: str
+    expiresIn: int
+
+
+@dataclass
+class CurrentUser:
+    username: str
+    role: str
+
+
+def _jwt_secret() -> str:
+    secret = _env("AUTH_JWT_SECRET")
+    if not secret:
+        raise RuntimeError("AUTH_JWT_SECRET es obligatorio")
+    return secret
+
+
+def get_current_user(authorization: str | None = Header(default=None)) -> CurrentUser:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Falta Authorization: Bearer <token>")
+    token = authorization.split(" ", 1)[1]
+    try:
+        claims = decode_token(token, secret=_jwt_secret())
+    except InvalidToken:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado") from None
+    return CurrentUser(username=claims.sub, role=claims.role)
+
+
+def require_role(*roles: str):
+    def _dep(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+        if user.role not in roles:
+            raise HTTPException(status_code=403, detail=f"Requiere rol: {'|'.join(roles)}")
+        return user
+
+    return _dep
+
+
+@app.on_event("startup")
+def bootstrap_admin() -> None:
+    repo = build_repo()
+    if repo.count_users() > 0:
+        return
+    mode = _env("CASE_STORE", "sqlite").lower()
+    username = _env("BOOTSTRAP_ADMIN_USERNAME")
+    password = _env("BOOTSTRAP_ADMIN_PASSWORD")
+    if not username or not password:
+        if mode == "azure_sql":
+            raise RuntimeError(
+                "BOOTSTRAP_ADMIN_USERNAME/BOOTSTRAP_ADMIN_PASSWORD son obligatorios "
+                "cuando CASE_STORE=azure_sql"
+            )
+        username, password = "admin", "admin-dev-only"
+        logger.warning("Bootstrap admin dev-only: admin/admin-dev-only — NO usar en producción")
+    repo.create_user(username, hash_password(password), "administrador")
+
+
+@app.post("/v1/auth/login", response_model=LoginResponse)
+def login(body: LoginRequest) -> LoginResponse:
+    repo = build_repo()
+    user = repo.get_user_by_username(body.username)
+    if not user or not user["isActive"] or not verify_password(body.password, user["passwordHash"]):
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+    ttl = int(_env("AUTH_JWT_TTL_SECONDS", "28800"))
+    token = issue_token(user["username"], user["role"], secret=_jwt_secret(), ttl_seconds=ttl)
+    return LoginResponse(accessToken=token, role=user["role"], expiresIn=ttl)
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+READ_ROLES = ("analista", "administrador", "auditor")
+WRITE_ROLES = ("analista", "administrador")
+
+
 @app.get("/v1/cases")
-def list_cases(status: Optional[str] = None) -> list[dict[str, Any]]:
+def list_cases(
+    status: Optional[str] = None,
+    user: CurrentUser = Depends(require_role(*READ_ROLES)),
+) -> list[dict[str, Any]]:
     return build_repo().list_cases(status=status)
 
 
 @app.get("/v1/cases/{case_id}")
-def get_case(case_id: UUID) -> dict[str, Any]:
+def get_case(case_id: UUID, user: CurrentUser = Depends(require_role(*READ_ROLES))) -> dict[str, Any]:
     case = build_repo().get_case(case_id)
     if not case:
         raise HTTPException(status_code=404, detail="Caso no encontrado")
@@ -88,12 +195,16 @@ def get_case(case_id: UUID) -> dict[str, Any]:
 
 
 @app.patch("/v1/cases/{case_id}/status")
-def patch_status(case_id: UUID, body: StatusUpdate) -> dict[str, Any]:
+def patch_status(
+    case_id: UUID,
+    body: StatusUpdate,
+    user: CurrentUser = Depends(require_role(*WRITE_ROLES)),
+) -> dict[str, Any]:
     try:
         return build_repo().update_status(
             case_id,
             body.status,
-            actor_id=body.actorId,
+            actor_id=user.username,
             detail=body.detail,
         )
     except KeyError:
@@ -103,7 +214,11 @@ def patch_status(case_id: UUID, body: StatusUpdate) -> dict[str, Any]:
 
 
 @app.post("/v1/cases/{case_id}/documents", status_code=201)
-def request_document_upload(case_id: UUID, body: DocumentRequest) -> dict[str, Any]:
+def request_document_upload(
+    case_id: UUID,
+    body: DocumentRequest,
+    user: CurrentUser = Depends(require_role(*WRITE_ROLES)),
+) -> dict[str, Any]:
     ctype = body.contentType.split(";")[0].strip().lower()
     if ctype not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(status_code=400, detail=f"contentType no permitido: {body.contentType}")
@@ -122,7 +237,7 @@ def request_document_upload(case_id: UUID, body: DocumentRequest) -> dict[str, A
         blob_path=blob_path,
         content_type=ctype,
         original_name=body.fileName,
-        uploaded_by=body.uploadedBy,
+        uploaded_by=user.username,
         document_id=document_id,
     )
 
@@ -171,6 +286,7 @@ async def upload_document_local(
     case_id: UUID,
     document_id: UUID,
     file: UploadFile = File(...),
+    user: CurrentUser = Depends(require_role(*WRITE_ROLES)),
 ) -> dict[str, Any]:
     """Carga directa al API (demo local) + análisis inmediato."""
     repo = build_repo()
@@ -196,7 +312,11 @@ async def upload_document_local(
 
 
 @app.post("/v1/cases/{case_id}/documents/{document_id}/analyze")
-def analyze_document(case_id: UUID, document_id: UUID) -> dict[str, Any]:
+def analyze_document(
+    case_id: UUID,
+    document_id: UUID,
+    user: CurrentUser = Depends(require_role(*WRITE_ROLES)),
+) -> dict[str, Any]:
     """Analiza un blob ya subido vía SAS (Storage + AAD)."""
     repo = build_repo()
     doc = repo.get_document(document_id)
@@ -232,7 +352,46 @@ def analyze_document(case_id: UUID, document_id: UUID) -> dict[str, Any]:
 
 
 @app.get("/v1/cases/{case_id}/documents")
-def list_documents(case_id: UUID) -> list[dict[str, Any]]:
+def list_documents(
+    case_id: UUID,
+    user: CurrentUser = Depends(require_role(*READ_ROLES)),
+) -> list[dict[str, Any]]:
     if not build_repo().get_case(case_id):
         raise HTTPException(status_code=404, detail="Caso no encontrado")
     return build_repo().list_documents(case_id)
+
+
+def build_config_store() -> CosmosConfigStore:
+    endpoint = _env("COSMOS_DB_ENDPOINT")
+    if not endpoint:
+        raise RuntimeError("COSMOS_DB_ENDPOINT es obligatorio para /v1/admin/config")
+    return CosmosConfigStore(
+        endpoint=endpoint,
+        database_name=_env("COSMOS_DB_DATABASE", "centinela"),
+        container_name=_env("COSMOS_DB_CONTAINER", "transactions"),
+    )
+
+
+@app.get("/v1/admin/config")
+def get_admin_config(user: CurrentUser = Depends(require_role("administrador"))) -> dict[str, Any]:
+    store = build_config_store()
+    doc = store.get_config_doc()
+    threshold, risky = resolve_config(
+        doc,
+        int(_env("SCORING_THRESHOLD", "60")),
+        {x.strip() for x in _env("RISKY_MERCHANT_CATEGORIES", "7995,6051,7801").split(",") if x.strip()},
+    )
+    return {
+        "threshold": threshold,
+        "riskyCategories": sorted(risky),
+        "source": "cosmos" if doc else "env_default",
+    }
+
+
+@app.put("/v1/admin/config")
+def put_admin_config(
+    body: AdminConfigRequest,
+    user: CurrentUser = Depends(require_role("administrador")),
+) -> dict[str, Any]:
+    store = build_config_store()
+    return store.upsert_config_doc(body.threshold, body.riskyCategories, updated_by=user.username)
