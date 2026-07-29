@@ -79,39 +79,51 @@ class ScoringWorker:
         self._store.ensure_schema(ttl_seconds=ttl_days * 24 * 3600)
 
     def run_forever(self, max_messages: int | None = None) -> None:
+        """Escucha la cola indefinidamente.
+
+        `get_queue_receiver(..., max_wait_time=30)` hace que `for msg in receiver`
+        termine (StopIteration) tras 30s sin mensajes — es el timeout de espera del
+        SDK, no una señal de apagado. Sin el `while` externo, ese timeout hacía que
+        el proceso completo terminara silenciosamente cada vez que la cola quedaba
+        vacía por más de 30s, dependiendo de que Container Apps lo reiniciara a
+        tiempo para no perder mensajes. Reconectamos el receiver (no el cliente
+        completo) cada vez que la ventana expira, así el proceso nunca termina por
+        sí solo salvo error real o al alcanzar `max_messages`.
+        """
         processed = 0
         with ServiceBusClient(self._sb_ns, credential=self._credential) as client:
-            with client.get_queue_receiver(self._q_in, max_wait_time=30) as receiver:
-                logger.info("Listening on %s (threshold=%s)", self._q_in, self._threshold)
-                for msg in receiver:
-                    self._refresh_config()
-                    body: dict[str, Any] = {}
-                    started = time.perf_counter()
-                    try:
-                        body = json.loads(str(msg))
-                        result = self.process_event(body)
-                        elapsed_ms = (time.perf_counter() - started) * 1000
-                        logger.info(
-                            "scored transactionId=%s correlationId=%s score=%s fraud=%s "
-                            "duration_ms=%.1f",
-                            body.get("transactionId"),
-                            body.get("correlationId"),
-                            result["score"],
-                            result["isFraudCandidate"],
-                            elapsed_ms,
-                        )
-                        receiver.complete_message(msg)
-                    except Exception as exc:  # noqa: BLE001 — DLQ vía abandon tras max delivery
-                        logger.exception(
-                            "scoring_fail transactionId=%s correlationId=%s error=%s",
-                            body.get("transactionId"),
-                            body.get("correlationId"),
-                            exc,
-                        )
-                        receiver.abandon_message(msg)
-                    processed += 1
-                    if max_messages is not None and processed >= max_messages:
-                        break
+            while max_messages is None or processed < max_messages:
+                with client.get_queue_receiver(self._q_in, max_wait_time=30) as receiver:
+                    logger.info("Listening on %s (threshold=%s)", self._q_in, self._threshold)
+                    for msg in receiver:
+                        self._refresh_config()
+                        body: dict[str, Any] = {}
+                        started = time.perf_counter()
+                        try:
+                            body = json.loads(str(msg))
+                            result = self.process_event(body)
+                            elapsed_ms = (time.perf_counter() - started) * 1000
+                            logger.info(
+                                "scored transactionId=%s correlationId=%s score=%s fraud=%s "
+                                "duration_ms=%.1f",
+                                body.get("transactionId"),
+                                body.get("correlationId"),
+                                result["score"],
+                                result["isFraudCandidate"],
+                                elapsed_ms,
+                            )
+                            receiver.complete_message(msg)
+                        except Exception as exc:  # noqa: BLE001 — DLQ vía abandon tras max delivery
+                            logger.exception(
+                                "scoring_fail transactionId=%s correlationId=%s error=%s",
+                                body.get("transactionId"),
+                                body.get("correlationId"),
+                                exc,
+                            )
+                            receiver.abandon_message(msg)
+                        processed += 1
+                        if max_messages is not None and processed >= max_messages:
+                            break
 
     def process_event(self, event: dict[str, Any]) -> dict[str, Any]:
         account_id = event["accountId"]
