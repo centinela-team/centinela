@@ -1,11 +1,19 @@
 // =====================================================================
 // modules/virtual-network.bicep
-// VNet con 3 subredes base para:
-//   - snet-apps   : App Service Plan vnet integration (futuro)
-//   - snet-pe     : subred reservada para Private Endpoints cuando se autoricen
-//                   (actualmente prohibido por spec, pero la subnet queda
-//                    reservada sin costo alguno)
-//   - snet-data   : subred reservada para data services (SQL, Cosmos)
+// VNet con 4 subredes:
+//   - snet-apps            : App Service Plan vnet integration (futuro)
+//   - snet-pe               : subred reservada para Private Endpoints cuando se
+//                              autoricen (actualmente prohibido por spec, pero la
+//                              subnet queda reservada sin costo alguno)
+//   - snet-data             : subred reservada para data services (SQL, Cosmos)
+//   - snet-container-apps   : subred dedicada para integración VNet de Container
+//                              Apps Environment. Deliberadamente separada de
+//                              snet-apps: esa ya tiene (o tuvo) delegación a
+//                              Microsoft.Web/serverFarms para App Service, y una
+//                              subred solo admite una delegación a la vez.
+//                              /23 en vez de /24 — Consumption-only Container
+//                              Apps Environments requieren un rango mayor que el
+//                              /24 que usan las otras 3 subredes.
 //
 // NOTA: VNet en sí es gratuito. Subnets y NSG sin coste. Solo se cobra
 // peering entre VNets y por ip pública estática (no creada aquí).
@@ -21,14 +29,15 @@ param location string
 @description('Tags')
 param tags object
 
-@description('CIDR de la VNet. Default /16 → 256 direcciones por subred con /24.')
+@description('CIDR de la VNet. /16 da margen de sobra para 3 subredes /24 + 1 /23.')
 param vnetAddressPrefix string = '10.20.0.0/16'
 
-@description('CIDRs de las 3 subredes base (en orden: apps, pe, data).')
+@description('CIDRs de las 4 subredes (en orden: apps, pe, data, container-apps).')
 param subnetPrefixes array = [
   '10.20.1.0/24'  // snet-apps
   '10.20.2.0/24'  // snet-pe
   '10.20.3.0/24'  // snet-data
+  '10.20.4.0/23'  // snet-container-apps (cubre 10.20.4.0 - 10.20.5.255)
 ]
 
 resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
@@ -83,6 +92,23 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
           ]
         }
       }
+      {
+        name: 'snet-container-apps'
+        properties: {
+          addressPrefix: subnetPrefixes[3]
+          privateEndpointNetworkPolicies: 'Disabled'
+          privateLinkServiceNetworkPolicies: 'Enabled'
+          delegations: [
+            {
+              name: 'containerAppsDelegation'
+              properties: {
+                serviceName: 'Microsoft.App/environments'
+              }
+            }
+          ]
+          serviceEndpoints: []
+        }
+      }
     ]
     enableDdosProtection: false
     enableVmProtection: false
@@ -95,11 +121,12 @@ output id string = vnet.id
 @description('Nombre de la VNet')
 output name string = vnet.name
 
-@description('Array con los resource IDs de las 3 subredes (en orden: apps, pe, data)')
+@description('Array con los resource IDs de las 4 subredes (en orden: apps, pe, data, container-apps)')
 output subnetIds array = [
   vnet.properties.subnets[0].id
   vnet.properties.subnets[1].id
   vnet.properties.subnets[2].id
+  vnet.properties.subnets[3].id
 ]
 
 @description('Mapa de subnet IDs por nombre, para acceso directo desde main sin importar orden')
@@ -107,4 +134,5 @@ output subnetIdByName object = {
   'snet-apps': vnet.properties.subnets[0].id
   'snet-pe': vnet.properties.subnets[1].id
   'snet-data': vnet.properties.subnets[2].id
+  'snet-container-apps': vnet.properties.subnets[3].id
 }

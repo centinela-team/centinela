@@ -48,6 +48,7 @@ var keyVaultName = take(toLower('kv-${projectName}-${environment}'), 24)
 var appInsightsName = take(toLower('appi-${projectName}-${environment}'), 260)
 var logAnalyticsName = take(toLower('log-${projectName}-${environment}'), 63)
 var serviceBusNamespaceName = take(toLower('sb-${projectName}-${environment}'), 50)
+var documentIntelligenceName = take(toLower('cog-${projectName}-docintel-${environment}'), 64)
 
 @description('Tenant ID para Key Vault. Por defecto el del deployment.')
 param tenantId string = subscription().tenantId
@@ -106,6 +107,15 @@ module serviceBus './modules/service-bus.bicep' = {
   }
 }
 
+module documentIntelligence './modules/document-intelligence.bicep' = {
+  name: 'document-intelligence'
+  params: {
+    name: documentIntelligenceName
+    location: location
+    tags: tags
+  }
+}
+
 // ─── Outputs (trazabilidad) ─────────────────────────────────────────────────
 output vnetId string = vnet.outputs.id
 output vnetName string = vnet.outputs.name
@@ -125,3 +135,6 @@ output serviceBusId string = serviceBus.outputs.id
 output serviceBusNamespaceName string = serviceBus.outputs.name
 output serviceBusEndpoint string = serviceBus.outputs.endpoint
 output ingestionQueueName string = serviceBus.outputs.ingestionQueueName
+output documentIntelligenceId string = documentIntelligence.outputs.id
+output documentIntelligenceName string = documentIntelligence.outputs.name
+output documentIntelligenceEndpoint string = documentIntelligence.outputs.endpoint

@@ -44,7 +44,10 @@ $MaxDocumentBytes      = 5MB
 
 # --- Mensajería ---
 $ServiceBusNamespace = "sb-$ProjectName$Environment$UniqueSuffix"
-$ServiceBusSku       = "Basic"
+$ServiceBusSku       = "Basic"  # Basic no soporta duplicate detection (limitación de Azure, no config).
+                                 # Idempotencia real vía fingerprint en Blob (ingestion-api), no a nivel de cola.
+                                 # Standard sí lo soportaría pero tiene costo recurrente injustificado aquí.
+                                 # Ver docs/project/AUDITORIA_2026-07-29.md hallazgo #5 (cerrado, by-design).
 $QueueIngestionName  = "transactions"  # ya creada por el compañero
 $QueueCasesName      = "cases"         # semana 2
 

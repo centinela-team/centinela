@@ -7,7 +7,13 @@
 // Standard tier (no Premium) es suficiente para MVP porque:
 //   - Sessions: ilimitadas
 //   - DLQ: soportada
-//   - Duplicate detection: sí
+//   - Duplicate detection: soportada en Standard (NO en Basic). El despliegue
+//     real usa Basic (ver infrastructure/scripts/params.ps1 $ServiceBusSku)
+//     por costo — duplicate detection no está activo ahí; la idempotencia
+//     real la resuelve la app (fingerprint en Blob, ingestion-api). El
+//     default 'Standard' de este módulo sigue siendo la ruta de mejora si
+//     el presupuesto lo permite. Ver docs/project/AUDITORIA_2026-07-29.md
+//     hallazgo #5 (cerrado, by-design).
 //   - Geo-disaster recovery: NO (Premium feature — fuera de MVP)
 //   - Auto-scale: NO (Premium feature)
 //

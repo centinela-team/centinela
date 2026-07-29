@@ -78,3 +78,4 @@ crash.log
 # Local review / tooling / agent working dirs (never committed)
 .opencode/
 .review/
+CLAUDE.md
