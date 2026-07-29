@@ -51,3 +51,41 @@ B1 Linux ~ aprox. costo diario del plan; **apagar con `shutdown.ps1 -DeletePlan`
 2. SQL y Cosmos en la misma región permitida por Students (probar canadacentral temprano).
 3. No crear App Service hasta tener demo de cola + scoring local.
 4. Instrumentar `correlationId` desde el primer endpoint.
+
+## Endurecimiento posterior (2026-07-29)
+
+| Decisión | Elección | Alternativas descartadas | Motivo |
+|---|---|---|---|
+| Firewall Key Vault (`kv-centineladev03`) | `defaultAction: Allow`, control de acceso vía RBAC (`Key Vault Secrets User`) | `defaultAction: Deny` + `bypass: AzureServices` | Container Apps (Consumption, sin integración VNet) no tiene IP de salida fija; el bypass `AzureServices` de Key Vault no cubre su tráfico — causaba `ForbiddenByFirewall` intermitente. RBAC ya es el control real (no hay claves en uso). |
+| Firewall Cosmos DB (`cosmos-centineladev03`) | `ipRules: ["0.0.0.0"]` ("aceptar conexiones solo desde dentro de datacenters Azure") | Restricción por IP específica, VNet service endpoint, Private Endpoint | Mismo motivo que Key Vault: sin IP de salida fija de Container Apps, restringir por IP puntual rompe el pipeline. `0.0.0.0` es el equivalente Cosmos de `AllowAzureServices` que ya usa Azure SQL. **Limitación aceptada**: según documentación de Microsoft, esta opción no aísla de otros tenants de Azure, solo bloquea internet directo. No se pudo confirmar el bloqueo empíricamente en esta sesión (una prueba directa desde fuera de Azure seguía recibiendo `401` en vez del `403` esperado, y los logs de diagnóstico no mostraron datos tras ~30 min) — la configuración quedó aplicada según lo documentado por Microsoft, pero sin verificación end-to-end propia. Pendiente de reintentar verificación en una sesión futura. |
+| Aislamiento real de red para Cosmos/SQL (VNet integration de Container Apps o Private Endpoints) | Descartado en esta sesión | — | Ambas opciones requieren recrear el entorno de Container Apps (destructivo) o violan la exclusión explícita de Private Endpoints en `MASTER_AI_PROMPT.md`. El máximo aislamiento alcanzable con las restricciones actuales del proyecto es RBAC + bloqueo de internet directo, no aislamiento por tenant. |
+
+## RBAC de identidad por rol (README Semana 1, §2.6) — 2026-07-29
+
+Estado previo: los 6 integrantes del equipo tenían `Contributor` plano sobre `rg-centinela-dev`, sin ninguna distinción de rol. Diseño aplicado:
+
+| Rol (README) | Mapeo Azure RBAC | Justificación |
+|---|---|---|
+| Administrador | Rol integrado `Contributor` (ya asignado al equipo) | Control total de infra; no se crea nada nuevo |
+| Auditor de solo lectura | Rol integrado `Reader` | Lectura de plano de control en todo el RG; no puede escribir nada por diseño del rol integrado |
+| Analista de fraude | Rol custom **`Centinela Analista`** (`infrastructure/scripts/roles/analista-role.json`, creado en Azure) | `Reader` no alcanza: necesita leer evidencia/transacciones en Blob Storage para investigar casos (`Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read`), algo que Reader (solo plano de control) no da. El acceso a datos de Cosmos, si se necesita, se maneja aparte vía el RBAC de datos propio de Cosmos (`az cosmosdb sql role assignment`), no como parte de este rol |
+| Servicio | Ya implementado — identidades gestionadas + roles de datos específicos por recurso (ver comentarios en `provision.ps1`, `complete-infra.ps1`, `deploy-cases.ps1`) | Cada permiso ya está justificado por la operación concreta que lo requiere |
+
+**Límite deliberado**: ningún integrante real del equipo fue reasignado — los 6 siguen en `Contributor`. Reasignar el acceso de Gabriela, Juliana, etc. sin su consentimiento no es una decisión unilateral que corresponda tomar aquí. `provision-iam-roles.ps1 -AssignTo <upn> -Role {Analista|Auditor|Administrador}` deja la asignación lista para cuando el equipo decida aplicarla a alguien real.
+
+### Validación (3 pruebas de acceso negativas del README)
+
+Metodología: en vez de crear identidades de prueba nuevas, se usa la API real de Azure `Microsoft.Authorization/checkAccess` (`infrastructure/scripts/test-iam-roles.sh`) — evalúa con el motor de autorización real si un principal puede ejecutar una acción, sin necesidad de loguearse como esa identidad.
+
+| # | Rol | Acción intentada | Resultado | Evidencia |
+|---|---|---|---|---|
+| 1 | Servicio | `Microsoft.Resources/subscriptions/resourceGroups/write` y `Microsoft.App/containerApps/write`, sobre la identidad gestionada real de `ca-centinela-api-dev` | **Denegado** (`accessDecision: NotAllowed`) | Verificado en vivo contra Azure real, 2026-07-29 |
+| 2 | Analista | Modificar configuración de infraestructura | **Pendiente** | No se pudo crear un service principal de prueba: `az ad sp create-for-rbac` falló con `Insufficient privileges to complete the operation` — es un permiso de Azure AD del tenant (crear app registrations), no de la suscripción; ni siquiera `Contributor` sobre el RG lo cubre. Pendiente de coordinar con un integrante real del equipo para asignarle el rol y correr la prueba (comando listo en `test-iam-roles.sh`) |
+| 3 | Auditor | Modificar cualquier recurso | **Pendiente** | Mismo bloqueo que #2 |
+
+Prueba 1 es evidencia sólida y suficiente por sí sola (ninguno de los roles de datos otorgados al Servicio —Storage/Service Bus/Key Vault/Cosmos/ACR/Cognitive Services— incluye una acción de escritura de plano de control; `checkAccess` lo confirma directamente contra el motor real de autorización). Las pruebas 2 y 3 no se pudieron ejecutar de forma autónoma por la restricción de AAD del tenant — quedan documentadas como gap real, no como "cumplido".
+
+### Autenticación vs. autorización — dónde ocurre cada una en Centinela
+
+- **A nivel de infraestructura Azure**: la autenticación ocurre cuando `DefaultAzureCredential` (usado en todos los workers y en `case-service/api.py`) obtiene un token para la identidad gestionada del recurso — ej. la managed identity de `scoring-engine` autenticándose ante Azure AD para poder llamar a Cosmos. La autorización ocurre después, cuando Azure RBAC evalúa si esa identidad ya autenticada tiene un rol asignado que permita la acción concreta (ej. `Cosmos DB Built-in Data Contributor` para escribir un documento) — es exactamente lo que la prueba 1 de arriba verifica desde el lado negativo.
+- **A nivel de aplicación (dashboard de analistas)**: la autenticación ocurre en `POST /v1/auth/login` (`backend/case-service/auth.py`), donde se valida la contraseña y se emite un JWT firmado. La autorización ocurre en cada request posterior, en `require_role(...)` (`backend/case-service/api.py`), que decide si el rol dentro del JWT ya validado (`analista`/`administrador`/`auditor`) puede ejecutar ese endpoint concreto — ej. solo `administrador` puede llamar `PUT /v1/admin/config`.

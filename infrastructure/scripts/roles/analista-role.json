@@ -1,0 +1,15 @@
+{
+  "Name": "Centinela Analista",
+  "Description": "Lectura de plano de control (igual que Reader) más lectura de datos de evidencia/transacciones en Blob Storage, para investigar casos de fraude. No puede modificar ni crear ningún recurso de infraestructura.",
+  "Actions": [
+    "*/read"
+  ],
+  "NotActions": [],
+  "DataActions": [
+    "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read"
+  ],
+  "NotDataActions": [],
+  "AssignableScopes": [
+    "/subscriptions/bcc499f4-13e1-4b24-a323-625c216bfa94/resourceGroups/rg-centinela-dev"
+  ]
+}

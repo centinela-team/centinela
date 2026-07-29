@@ -39,6 +39,14 @@ Alcance: revisión del código en `main` (commit `854fa2f`) contra los tres docu
 | 5 | Estructura de repo — `tests/security/`, `tests/performance/`, `tests/integration/` en la raíz | Carpetas vacías (`.gitkeep` únicamente). Las únicas pruebas reales son unitarias, dentro de cada `backend/<servicio>/tests/` |
 | 6 | MASTER §2 — Document Intelligence | Código real implementado (`DocumentIntelligenceClient`), pero **no activado**: sin endpoint provisionado en el RG real, así que en producción corre siempre en modo fallback local (`pypdf` + heurísticas) |
 
+### Resolución (2026-07-29, continuación — sesión de verificación en vivo)
+
+- **#1 — Resuelto.** Autenticación/autorización de la API implementadas de verdad: JWT (`backend/case-service/auth.py`) + `require_role()` en cada endpoint de `case-service/api.py`, con 3 roles de app (`analista`/`administrador`/`auditor`) y panel de Administrador funcional en el frontend.
+- **#2 — Resuelto.** `PUT /v1/admin/config` permite cambiar umbral y comercios de riesgo en runtime sin redespliegue, protegido a `administrador`. Verificado en vivo.
+- **#3 — Parcial.** VNet↔Container Apps sigue sin integrar (deferido, requiere recrear el entorno — destructivo). En su lugar se blindó la capa de datos a nivel de recurso: SQL con `AllowAzureServices` + AAD-only (ya estaba así), Cosmos con `ipRules: ["0.0.0.0"]` aplicado hoy (ver `decisions.md`, sección "Endurecimiento posterior") — bloqueo no confirmado empíricamente pese a seguir la documentación oficial.
+- **#4 — Parcial.** Matriz de permisos por rol creada a nivel de infraestructura Azure (no solo de la app): rol custom `Centinela Analista`, mapeo `Auditor`→`Reader`, `Administrador`→`Contributor`. De las 3 pruebas negativas requeridas, solo la de `Servicio` se verificó en vivo (denegado, confirmado); `Analista`/`Auditor` quedan pendientes por una restricción de Azure AD del tenant (no se pueden crear service principals de prueba). Detalle completo en `decisions.md`, sección "RBAC de identidad por rol".
+- **#6 — Resuelto.** `cog-centinela-docintel-dev` desplegado y con RBAC otorgado; ya no corre en modo fallback exclusivamente.
+
 ## 3. Verificado correcto (sin hallazgos)
 
 - Sin secretos ni cadenas de conexión hardcodeadas en el repo; solo `.env.example` con placeholders vacíos.
