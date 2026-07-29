@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CaseDetail,
   CaseSummary,
@@ -13,6 +13,17 @@ import {
   updateStatus,
   uploadDocument,
 } from "./api";
+import {
+  IconAlert,
+  IconFile,
+  IconInbox,
+  IconLayers,
+  IconLogout,
+  IconRefresh,
+  IconShield,
+  IconSliders,
+  IconUpload,
+} from "./icons";
 
 const NEXT: Record<string, string[]> = {
   OPEN: ["IN_REVIEW", "CONFIRMED_FRAUD", "DISMISSED"],
@@ -21,7 +32,37 @@ const NEXT: Record<string, string[]> = {
   DISMISSED: [],
 };
 
-function LoginForm({ onSuccess }: { onSuccess: (token: string, role: string) => void }) {
+const STATUS_LABEL: Record<string, string> = {
+  OPEN: "Abierto",
+  IN_REVIEW: "En revisión",
+  CONFIRMED_FRAUD: "Fraude confirmado",
+  DISMISSED: "Descartado",
+};
+
+function scoreLevel(score: number, threshold: number): "high" | "medium" | "low" {
+  if (score >= threshold * 1.3) return "high";
+  if (score >= threshold) return "medium";
+  return "low";
+}
+
+function initials(name: string): string {
+  return name.slice(0, 2).toUpperCase();
+}
+
+function Brand() {
+  return (
+    <div className="sidebar-brand">
+      <IconShield size={22} />
+      <strong>Centinela</strong>
+    </div>
+  );
+}
+
+function LoginForm({
+  onSuccess,
+}: {
+  onSuccess: (token: string, role: string, username: string) => void;
+}) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -33,8 +74,8 @@ function LoginForm({ onSuccess }: { onSuccess: (token: string, role: string) => 
     setError(null);
     try {
       const resp = await login(username, password);
-      storeAuth(resp.accessToken, resp.role);
-      onSuccess(resp.accessToken, resp.role);
+      storeAuth(resp.accessToken, resp.role, username);
+      onSuccess(resp.accessToken, resp.role, username);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error de login");
     } finally {
@@ -43,36 +84,42 @@ function LoginForm({ onSuccess }: { onSuccess: (token: string, role: string) => 
   };
 
   return (
-    <div className="shell">
-      <header className="top">
-        <div>
-          <p className="brand">Centinela</p>
-          <h1>Acceso analistas</h1>
+    <div className="login-screen">
+      <div className="login-card">
+        <div className="login-mark">
+          <IconShield size={26} />
+          <strong>Centinela</strong>
         </div>
-      </header>
-      {error ? <p className="banner">{error}</p> : null}
-      <form className="detail login-form" onSubmit={(e) => void onSubmit(e)}>
-        <label>
-          Usuario
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoFocus
-          />
-        </label>
-        <label>
-          Contraseña
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
-        <button type="submit" disabled={busy}>
-          {busy ? "Ingresando…" : "Ingresar"}
-        </button>
-      </form>
+        <p className="muted">Acceso analistas</p>
+        {error ? (
+          <p className="banner">
+            <IconAlert size={16} />
+            {error}
+          </p>
+        ) : null}
+        <form className="form-grid" onSubmit={(e) => void onSubmit(e)}>
+          <label>
+            Usuario
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoFocus
+            />
+          </label>
+          <label>
+            Contraseña
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy ? "Ingresando…" : "Ingresar"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
@@ -123,13 +170,23 @@ function AdminPanel() {
   };
 
   return (
-    <main className="detail">
+    <div className="panel detail">
       <section>
-        <h2>Configuración de scoring</h2>
-        {source ? <p className="meta">Fuente actual: {source}</p> : null}
-        {error ? <p className="banner">{error}</p> : null}
-        {saved ? <p className="meta">Guardado.</p> : null}
-        <form className="login-form" onSubmit={(e) => void onSave(e)}>
+        <h3>
+          <IconSliders size={18} />
+          Configuración de scoring
+        </h3>
+        <p className="form-hint">
+          Fuente actual: <strong>{source ?? "…"}</strong>
+        </p>
+        {error ? (
+          <p className="banner">
+            <IconAlert size={16} />
+            {error}
+          </p>
+        ) : null}
+        {saved ? <p className="form-success">Guardado correctamente.</p> : null}
+        <form className="form-grid" onSubmit={(e) => void onSave(e)} style={{ maxWidth: 360 }}>
           <label>
             Umbral (1-102)
             <input
@@ -149,12 +206,12 @@ function AdminPanel() {
               placeholder="7995, 6051, 7801"
             />
           </label>
-          <button type="submit" disabled={busy}>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
             {busy ? "Guardando…" : "Guardar"}
           </button>
         </form>
       </section>
-    </main>
+    </div>
   );
 }
 
@@ -162,6 +219,7 @@ export default function App() {
   const stored = getStoredAuth();
   const [token, setToken] = useState<string | null>(stored?.token ?? null);
   const [role, setRole] = useState<string | null>(stored?.role ?? null);
+  const [username, setUsername] = useState<string | null>(stored?.username ?? null);
   const [view, setView] = useState<"cases" | "admin">("cases");
 
   const [cases, setCases] = useState<CaseSummary[]>([]);
@@ -169,6 +227,19 @@ export default function App() {
   const [detail, setDetail] = useState<CaseDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showUserMenu) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [showUserMenu]);
 
   const reload = async () => {
     setBusy(true);
@@ -244,6 +315,7 @@ export default function App() {
     clearAuth();
     setToken(null);
     setRole(null);
+    setUsername(null);
     setView("cases");
     setCases([]);
     setDetail(null);
@@ -253,123 +325,203 @@ export default function App() {
   if (!token) {
     return (
       <LoginForm
-        onSuccess={(t, r) => {
+        onSuccess={(t, r, u) => {
           setToken(t);
           setRole(r);
+          setUsername(u);
         }}
       />
     );
   }
 
   return (
-    <div className="shell">
-      <header className="top">
-        <div>
-          <p className="brand">Centinela</p>
-          <h1>{view === "admin" ? "Panel de administración" : "Cola de casos"}</h1>
-        </div>
-        <div className="actions">
+    <div className="app-shell">
+      <nav className="sidebar">
+        <Brand />
+        <div className="sidebar-nav">
+          <button
+            type="button"
+            className={view === "cases" ? "nav-item active" : "nav-item"}
+            onClick={() => setView("cases")}
+          >
+            <IconLayers size={18} />
+            Casos
+          </button>
           {role === "administrador" ? (
             <button
               type="button"
-              className="ghost"
-              onClick={() => setView((v) => (v === "cases" ? "admin" : "cases"))}
+              className={view === "admin" ? "nav-item active" : "nav-item"}
+              onClick={() => setView("admin")}
             >
-              {view === "cases" ? "Panel admin" : "Volver a casos"}
+              <IconSliders size={18} />
+              Panel admin
             </button>
           ) : null}
-          <button type="button" className="ghost" onClick={() => void reload()} disabled={busy}>
-            Actualizar
-          </button>
-          <button type="button" className="ghost" onClick={onLogout}>
-            Salir
+        </div>
+        <div className="sidebar-spacer" />
+        <div className="user-chip-wrap" ref={userMenuRef}>
+          {showUserMenu ? (
+            <div className="user-menu">
+              <p className="user-menu-title">Sesión iniciada</p>
+              <p className="user-menu-detail">
+                <strong>{username}</strong>
+                <span className="role-pill">{role}</span>
+              </p>
+              <button type="button" className="user-menu-logout" onClick={onLogout}>
+                <IconLogout size={16} />
+                Cerrar sesión
+              </button>
+            </div>
+          ) : null}
+          <button
+            type="button"
+            className="sidebar-footer"
+            onClick={() => setShowUserMenu((v) => !v)}
+            aria-expanded={showUserMenu}
+          >
+            <span className="avatar">{initials(username ?? "?")}</span>
+            <span className="user-meta">
+              <strong>{username}</strong>
+              <span className="role-pill">{role}</span>
+            </span>
           </button>
         </div>
-      </header>
+      </nav>
 
-      {error ? <p className="banner">{error}</p> : null}
+      <div className="app-main">
+        <header className="topbar">
+          <h1>{view === "admin" ? "Panel de administración" : "Cola de casos"}</h1>
+          <div className="topbar-actions">
+            <button type="button" className="btn" onClick={() => void reload()} disabled={busy}>
+              <IconRefresh size={16} />
+              Actualizar
+            </button>
+          </div>
+        </header>
 
-      {view === "admin" ? (
-        <AdminPanel />
-      ) : (
-        <div className="layout">
-          <aside className="list">
-            {cases.length === 0 ? (
-              <p className="muted">No hay casos abiertos en SQLite.</p>
-            ) : (
-              cases.map((c) => (
-                <button
-                  key={c.caseId}
-                  type="button"
-                  className={c.caseId === selectedId ? "row active" : "row"}
-                  onClick={() => setSelectedId(c.caseId)}
-                >
-                  <span className="score">{c.score}</span>
-                  <span>
-                    <strong>{c.accountId}</strong>
-                    <small>{c.status}</small>
-                  </span>
-                </button>
-              ))
-            )}
-          </aside>
+        {error ? (
+          <p className="banner">
+            <IconAlert size={16} />
+            {error}
+          </p>
+        ) : null}
 
-          <main className="detail">
-            {!detail ? (
-              <p className="muted">Selecciona un caso.</p>
-            ) : (
-              <>
-                <section>
-                  <h2>Caso {detail.caseId.slice(0, 8)}…</h2>
-                  <p className="meta">
-                    Cuenta <strong>{detail.accountId}</strong> · Tx {detail.transactionId} · Score{" "}
-                    <strong>{detail.score}</strong> / {detail.threshold}
-                  </p>
-                  <div className="actions">
-                    {(NEXT[detail.status] || []).map((s) => (
-                      <button key={s} type="button" onClick={() => void onStatus(s)} disabled={busy}>
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </section>
+        {view === "admin" ? (
+          <AdminPanel />
+        ) : (
+          <div className="layout">
+            <aside className="panel list">
+              {cases.length === 0 ? (
+                <div className="empty-state">
+                  <IconInbox size={28} />
+                  No hay casos abiertos en SQLite.
+                </div>
+              ) : (
+                cases.map((c) => (
+                  <button
+                    key={c.caseId}
+                    type="button"
+                    className={c.caseId === selectedId ? "row active" : "row"}
+                    onClick={() => setSelectedId(c.caseId)}
+                  >
+                    <span className="score-chip" data-level={scoreLevel(c.score, c.threshold)}>
+                      {c.score}
+                    </span>
+                    <span className="row-meta">
+                      <strong>{c.accountId}</strong>
+                      <span className="status-tag" data-status={c.status}>
+                        {STATUS_LABEL[c.status] ?? c.status}
+                      </span>
+                    </span>
+                  </button>
+                ))
+              )}
+            </aside>
 
-                <section>
-                  <h3>Explicación</h3>
-                  {detail.explanation ? (
-                    <pre className="explanation">{detail.explanation}</pre>
-                  ) : (
-                    <p className="muted">Sin explicación todavía (explicador best-effort).</p>
-                  )}
-                </section>
+            <main className="panel detail">
+              {!detail ? (
+                <p className="muted">Selecciona un caso.</p>
+              ) : (
+                <>
+                  <section>
+                    <h2>Caso {detail.caseId.slice(0, 8)}…</h2>
+                    <p className="meta">
+                      Cuenta <strong>{detail.accountId}</strong> · Tx{" "}
+                      <code>{detail.transactionId.slice(0, 8)}…</code> · Score{" "}
+                      <strong>{detail.score}</strong> / {detail.threshold}
+                    </p>
+                    <div className="action-row">
+                      {(NEXT[detail.status] || []).map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          className="btn status-btn"
+                          data-status={s}
+                          onClick={() => void onStatus(s)}
+                          disabled={busy}
+                        >
+                          {STATUS_LABEL[s] ?? s}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
 
-                <section>
-                  <h3>Documentos de verificación</h3>
-                  <label className="upload">
-                    <input
-                      type="file"
-                      accept=".txt,.pdf,.png,.jpg,.jpeg"
-                      onChange={(e) => void onFile(e.target.files?.[0] ?? null)}
-                    />
-                    Adjuntar documento
-                  </label>
-                  <ul className="docs">
-                    {(detail.documents || []).map((d) => (
-                      <li key={d.documentId}>
-                        <strong>{d.originalName}</strong> — {d.status}
-                        {d.message ? <em> · {d.message}</em> : null}
-                        {d.extractedFields ? (
-                          <pre>{JSON.stringify(d.extractedFields, null, 2)}</pre>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              </>
-            )}
-          </main>
-        </div>
-      )}
+                  <section>
+                    <h3>
+                      <IconFile size={16} />
+                      Explicación
+                    </h3>
+                    {detail.explanation ? (
+                      <pre className="explanation">{detail.explanation}</pre>
+                    ) : (
+                      <p className="muted">Sin explicación todavía (explicador best-effort).</p>
+                    )}
+                  </section>
+
+                  <section>
+                    <h3>
+                      <IconUpload size={16} />
+                      Documentos de verificación
+                    </h3>
+                    <label className="upload-zone">
+                      <IconUpload size={16} />
+                      <input
+                        type="file"
+                        accept=".txt,.pdf,.png,.jpg,.jpeg"
+                        onChange={(e) => void onFile(e.target.files?.[0] ?? null)}
+                      />
+                      Adjuntar documento
+                    </label>
+                    <ul className="docs">
+                      {(detail.documents || []).map((d) => (
+                        <li key={d.documentId} className="doc-item">
+                          <span className="doc-icon">
+                            <IconFile size={18} />
+                          </span>
+                          <span className="doc-body">
+                            <span className="doc-name">
+                              <strong>{d.originalName}</strong>
+                              <span className="doc-status" data-status={d.status}>
+                                {d.status}
+                              </span>
+                            </span>
+                            {d.message ? <div className="doc-message">{d.message}</div> : null}
+                            {d.extractedFields ? (
+                              <pre className="doc-fields">
+                                {JSON.stringify(d.extractedFields, null, 2)}
+                              </pre>
+                            ) : null}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                </>
+              )}
+            </main>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
