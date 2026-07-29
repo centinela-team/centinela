@@ -21,6 +21,11 @@ Este repositorio esta preparado para organizar la API de ingesta, el motor de sc
 
 ## Estado
 
+### Scripts Importantes Restaurados
+- `infrastructure/scripts/provision-sql.ps1`: Script para aprovisionar Azure SQL.
+- `infrastructure/scripts/deploy-container-apps.ps1`: Script para desplegar aplicaciones en contenedores.
+- `infrastructure/scripts/smoke-test.ps1`: Script de prueba de humo para la API.
+
 Estructura inicial del proyecto. No contiene funcionalidades implementadas.
 
 ## Documentacion y seguimiento

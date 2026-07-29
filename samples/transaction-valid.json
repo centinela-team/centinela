@@ -1,0 +1,19 @@
+{
+  "transactionId": "11111111-1111-4111-8111-111111111111",
+  "accountId": "ACC-demo-001",
+  "amount": "85000.5000",
+  "currency": "COP",
+  "type": "PURCHASE",
+  "clientObservedAt": "2026-07-28T12:00:00Z",
+  "merchant": {
+    "merchantId": "merchant-bog-01",
+    "categoryCode": "5942",
+    "name": "Electronics Bogota"
+  },
+  "location": {
+    "latitude": "4.711000",
+    "longitude": "-74.072100",
+    "city": "Bogota",
+    "country": "CO"
+  }
+}

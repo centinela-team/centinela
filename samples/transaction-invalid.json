@@ -1,0 +1,12 @@
+{
+  "transactionId": "not-a-uuid",
+  "accountId": "ACC-demo-001",
+  "amount": "-10",
+  "currency": "peso",
+  "type": "PURCHASE",
+  "location": {
+    "latitude": "200",
+    "longitude": "-74.072100"
+  },
+  "extra_field": "should-be-rejected"
+}
