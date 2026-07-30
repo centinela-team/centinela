@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centinela.dev/contracts/events/transaction-record.v1.schema.json",
+  "title": "TransactionRecord",
+  "description": "Persisted transaction document including scoring result, triggered rules and evidence. Storage-oriented contract (Cosmos DB): 'id' equals transactionId to guarantee idempotency, 'accountId' is the partition key so the dominant query (recent transactions by account) hits a single partition.",
+  "type": "object",
+  "required": [
+    "id",
+    "transactionId",
+    "accountId",
+    "correlationId",
+    "amount",
+    "currency",
+    "merchant",
+    "location",
+    "occurredAt",
+    "receivedAt",
+    "status",
+    "schemaVersion"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Document id. MUST equal transactionId: a second insert of the same transaction conflicts instead of duplicating (idempotency)."
+    },
+    "transactionId": {
+      "type": "string",
+      "description": "Unique transaction identifier assigned at ingestion."
+    },
+    "accountId": {
+      "type": "string",
+      "description": "Account that originated the transaction. Partition key."
+    },
+    "correlationId": {
+      "type": "string",
+      "description": "End-to-end correlation identifier propagated from ingestion through scoring, case management and monitoring."
+    },
+    "amount": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Transaction amount."
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "description": "ISO 4217 currency code."
+    },
+    "merchant": {
+      "type": "object",
+      "required": ["merchantId", "category"],
+      "properties": {
+        "merchantId": { "type": "string" },
+        "name": { "type": "string" },
+        "category": {
+          "type": "string",
+          "description": "Merchant category code or normalized category. Input for the risky-merchant rule."
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "required": ["country"],
+      "properties": {
+        "country": { "type": "string", "pattern": "^[A-Z]{2}$" },
+        "city": { "type": "string" },
+        "latitude": { "type": "number", "minimum": -90, "maximum": 90 },
+        "longitude": { "type": "number", "minimum": -180, "maximum": 180 }
+      },
+      "description": "Where the transaction happened. Input for the impossible-location rule."
+    },
+    "channel": {
+      "type": "string",
+      "enum": ["card_present", "ecommerce", "transfer", "atm", "other"],
+      "description": "Channel through which the transaction was made."
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the transaction happened (client clock). Sort field of the dominant query."
+    },
+    "receivedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the ingestion API received the transaction (server clock)."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["received", "scored", "case_requested"],
+      "description": "Processing state: received (ingested, not yet scored), scored (scoring completed, score at or below threshold), case_requested (score exceeded the threshold and FraudCaseRequested was emitted)."
+    },
+    "scoring": {
+      "type": "object",
+      "description": "Scoring result. Absent while status is 'received'; required once status is 'scored' or 'case_requested'.",
+      "required": ["score", "threshold", "isFraudSuspect", "scoredAt", "triggeredRules"],
+      "properties": {
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total score: sum of the points of every triggered rule."
+        },
+        "threshold": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Fraud threshold in effect when this transaction was scored. Persisted so cases remain explainable if configuration changes later."
+        },
+        "isFraudSuspect": {
+          "type": "boolean",
+          "description": "True when score > threshold. Per the specification a case opens only when the score exceeds the threshold."
+        },
+        "scoredAt": { "type": "string", "format": "date-time" },
+        "engineVersion": {
+          "type": "string",
+          "description": "Version of the scoring engine / rule set used."
+        },
+        "triggeredRules": {
+          "type": "array",
+          "description": "Rules that fired for this transaction. Empty array when no rule fired.",
+          "items": { "$ref": "#/$defs/triggeredRule" }
+        }
+      }
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of this document schema."
+    }
+  },
+  "$defs": {
+    "triggeredRule": {
+      "type": "object",
+      "required": ["ruleId", "points", "evidence"],
+      "properties": {
+        "ruleId": {
+          "type": "string",
+          "enum": ["velocity", "atypical_amount", "impossible_location", "risky_merchant"],
+          "description": "The four rules of the specification (T-013)."
+        },
+        "ruleName": { "type": "string" },
+        "points": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Points this rule contributed to the total score."
+        },
+        "evidence": {
+          "type": "object",
+          "description": "Concrete data that made the rule fire, used by the case explainer. Shape per rule is defined in T-014; this contract only requires it to be a JSON object.",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}
