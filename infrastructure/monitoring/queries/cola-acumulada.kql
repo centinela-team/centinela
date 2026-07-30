@@ -1,0 +1,10 @@
+// Service Bus backlog: active messages waiting to be processed and
+// dead-lettered messages. Requires the Service Bus diagnostic setting
+// sending metrics to the Log Analytics workspace (T-005/T-006).
+AzureMetrics
+| where TimeGenerated > ago(24h)
+| where ResourceProvider == "MICROSOFT.SERVICEBUS"
+| where MetricName in ("ActiveMessages", "DeadletteredMessages")
+| summarize valor = max(Maximum)
+    by bin(TimeGenerated, 5m), MetricName, Resource
+| order by TimeGenerated desc

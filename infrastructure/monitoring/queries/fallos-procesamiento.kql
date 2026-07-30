@@ -1,0 +1,18 @@
+// Processing failures inside the serverless pipeline: failed function
+// executions and failed dependency calls (Cosmos DB, Azure SQL,
+// Service Bus), with the correlationId needed to replay the journey.
+let window = 24h;
+union
+    (requests
+        | where timestamp > ago(window) and success == false
+        | where cloud_RoleName in ("scoring-engine", "case-service")
+        | project timestamp, stage = cloud_RoleName,
+                  tipo = "execution_failed", detalle = name,
+                  correlationId = tostring(customDimensions.correlationId)),
+    (dependencies
+        | where timestamp > ago(window) and success == false
+        | project timestamp, stage = cloud_RoleName,
+                  tipo = strcat("dependency:", type), detalle = name,
+                  correlationId = tostring(customDimensions.correlationId))
+| order by timestamp desc
+| take 200

@@ -1,0 +1,105 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "## Centinela — Tablero operativo\n\nSeguimiento del pipeline de transacciones: volumen, errores, cola y latencia extremo a extremo. Para trazar una transacción puntual, pegue su `correlationId` en el parámetro."
+      },
+      "name": "titulo"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "b1f6ec57-0001-4a01-9001-000000000001",
+            "version": "KqlParameterItem/1.0",
+            "name": "CorrelationId",
+            "type": 1,
+            "isRequired": false,
+            "value": ""
+          },
+          {
+            "id": "b1f6ec57-0001-4a01-9001-000000000002",
+            "version": "KqlParameterItem/1.0",
+            "name": "Ventana",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 86400000
+            }
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components"
+      },
+      "name": "parametros"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "traces\n| where message in (\"transaction_received\", \"transaction_scored\", \"case_created\")\n| summarize total = count() by bin(timestamp, 15m), etapa = message\n| order by timestamp asc",
+        "size": 0,
+        "title": "Volumen del pipeline: recibidas / puntuadas / casos",
+        "timeContextFromParameter": "Ventana",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "timechart"
+      },
+      "name": "volumen-pipeline"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "union\n    (requests | where success == false | project timestamp, stage = cloud_RoleName, tipo = \"failed_request\"),\n    (exceptions | project timestamp, stage = cloud_RoleName, tipo = \"exception\")\n| summarize total = count() by bin(timestamp, 5m), stage\n| order by timestamp asc",
+        "size": 0,
+        "title": "Errores por etapa (requests fallidos + excepciones)",
+        "timeContextFromParameter": "Ventana",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "timechart"
+      },
+      "name": "errores-por-etapa"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let ingested = requests\n    | where cloud_RoleName == \"ingestion-api\" and success == true\n    | project correlationId = tostring(customDimensions.correlationId), tIngesta = timestamp;\nlet caseCreated = traces\n    | where message == \"case_created\"\n    | project correlationId = tostring(customDimensions.correlationId), tCaso = timestamp;\ningested\n| join kind=inner caseCreated on correlationId\n| extend e2eSegundos = datetime_diff('millisecond', tCaso, tIngesta) / 1000.0\n| summarize p50 = percentile(e2eSegundos, 50), p95 = percentile(e2eSegundos, 95) by bin(tIngesta, 15m)\n| order by tIngesta asc",
+        "size": 0,
+        "title": "Latencia extremo a extremo: ingesta → apertura de caso (s)",
+        "timeContextFromParameter": "Ventana",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "timechart"
+      },
+      "name": "latencia-e2e"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "union requests, dependencies, traces, exceptions\n| where tostring(customDimensions.correlationId) == \"{CorrelationId}\"\n| project timestamp, stage = cloud_RoleName, itemType, detail = coalesce(name, message, type), success, duration, transactionId = tostring(customDimensions.transactionId), caseId = tostring(customDimensions.caseId)\n| order by timestamp asc",
+        "size": 0,
+        "title": "Recorrido de la transacción {CorrelationId}",
+        "timeContextFromParameter": "Ventana",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "conditionalVisibility": {
+          "parameterName": "CorrelationId",
+          "comparison": "isNotEqualTo",
+          "value": ""
+        }
+      },
+      "name": "recorrido-transaccion"
+    }
+  ],
+  "fallbackResourceIds": [],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}
