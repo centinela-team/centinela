@@ -133,24 +133,27 @@ Prueba 1 es evidencia sólida y suficiente por sí sola (ninguno de los roles de
 
 Estado previo: `deploy-azure` existía en `ci.yml` pero (a) estaba apagado (`vars.ENABLE_AZURE_DEPLOY` sin configurar, `secrets.AZURE_CREDENTIALS` sin configurar — confirmado con `gh secret list` / `gh variable list`, ambos vacíos), (b) no cubría `case-service` en absoluto, y (c) llamaba a `deploy-container-apps.ps1`, un script de **creación desde cero** (`containerapp env create` / `containerapp create`) que habría fallado o tenido efectos no deseados contra un entorno que ya existe desde hace semanas.
 
-Se rediseñó y se dejó listo para activar, pero **la activación final requiere una acción externa que esta sesión no puede completar**: crear el App Registration de Azure AD para que GitHub Actions se autentique. Intento real de `az ad sp create-for-rbac` (alternativa más simple) confirmó `Insufficient privileges to complete the operation` — restricción de Azure AD del tenant académico, no de la suscripción (mismo bloqueo ya documentado arriba para la prueba 2 de RBAC).
+Se rediseñó y quedó listo, pero la activación inicial parecía bloqueada: crear el App Registration de Azure AD requiere privilegios que mi cuenta (`juanpatino300993@correo.itm.edu.co`) no tiene. Intento real de `az ad sp create-for-rbac` confirmó `Insufficient privileges to complete the operation`.
 
-### Diseño aplicado (listo, sin activar)
+**Hallazgo real que destrabó el bloqueo**: el supuesto "tenant académico restringido" no es un muro sin salida — es que mi cuenta es **Guest** en ese tenant, no Member. Verificado con Graph API: `GET /me` devuelve `"userType": "Guest"` para mi cuenta, y el tenant real (`f524efae-c921-4e8b-851e-b002089d974d`) resultó ser `areandinaeduco.onmicrosoft.com` (Areandina), no el ITM. Una compañera del equipo, Andrea Gutiérrez (`agutierrez132@estudiantes.areandina.edu.co`), es **Member** nativa de ese mismo tenant — Azure AD por defecto permite a los members registrar aplicaciones aunque no tengan ningún rol administrativo asignado, a diferencia de los guests, que sí tienen esa capacidad recortada por defecto independientemente del rol. Ella corrió `az ad app create` con su propia cuenta y funcionó al primer intento.
+
+### Diseño aplicado y activado (2026-07-30, verificado en vivo)
 
 - **Autenticación por OIDC federado**, no por secreto clásico (`secrets.AZURE_CREDENTIALS`) — nada que rotar ni que se pueda filtrar en un log. `azure/login@v2` lo soporta nativamente con `client-id`/`tenant-id`/`subscription-id` como *variables* de repo (no secretos), sin `client-secret`.
 - **`deploy-azure` reescrito para ser idempotente** contra la infraestructura real ya desplegada: en vez de `deploy-container-apps.ps1`, ahora llama a `infrastructure/scripts/deploy-idempotent.sh <tag>`, que solo hace `az containerapp update --image` sobre las 4 Container Apps que ya existen (api, scoring, cases-api, cases-worker) — el mismo comando usado manualmente toda esta semana para publicar cada fix. Nunca crea ni borra recursos.
-- **Registro real corregido**: las 4 Container Apps reales tiran de `acrcentineladev05.azurecr.io` (confirmado con `az containerapp show`), no de GHCR — el job `docker` seguía empujando solo a GHCR, que nadie en Azure lee. `deploy-azure` ahora usa `az acr build` (construye del lado de ACR, cubierto por el rol de gestión `Contributor`, sin necesitar credenciales de push de datos aparte) para las 3 imágenes, incluyendo `case-service`. Se mantiene el push a GHCR en el job `docker` tal cual — sigue siendo el artefacto gratuito versionado del proyecto, independiente de si Azure está arriba o no; el costo de "construir dos veces" solo se paga cuando el deploy real está activo.
+- **Registro real corregido**: las 4 Container Apps reales tiran de `acrcentineladev05.azurecr.io` (confirmado con `az containerapp show`), no de GHCR — el job `docker` seguía empujando solo a GHCR, que nadie en Azure lee. Ahora el job `docker` también hace `az acr login` + `docker push` normal (plano de datos) a ACR para las 3 imágenes, reusando la caché de build de gha de los pasos de GHCR — no reconstruye desde cero. Se mantiene el push a GHCR tal cual, como artefacto gratuito independiente de si Azure está arriba.
 - **`case-service` agregado al pipeline** — no existía compilación ni push de esta imagen en CI hasta ahora, a pesar de ser el tercer servicio en producción desde hace días.
+- **Descarte real de `az acr build`**: el primer intento de activación (run [30571084830](https://github.com/centinela-team/centinela/actions/runs/30571084830)) usaba `az acr build` (ACR Tasks, construcción del lado del servidor) y falló con `(TasksOperationsNotAllowed) ACR Tasks requests ... are not permitted` — Azure deshabilita ACR Tasks a nivel de suscripción para "Azure for Students", no es un tema de rol ni de permisos (ni un Global Admin lo destraba sin abrir un ticket de soporte). Se reemplazó por `docker push` estándar, que sí es plano de datos y no depende de esa función.
 
-### Lo que falta — una acción de un tercero con más privilegios en el tenant
+### Comandos que ejecutó Andrea Gutiérrez (Member del tenant real) para destrabar esto
 
 ```bash
-# 1. App Registration (bloqueado para mi cuenta en este tenant)
+# 1-2. App Registration + service principal
 az ad app create --display-name "gh-actions-centinela"
 APP_ID=$(az ad app list --display-name "gh-actions-centinela" --query "[0].appId" -o tsv)
 az ad sp create --id "$APP_ID"
 
-# 2. Credencial federada OIDC, limitada a push en main de este repo
+# 3. Credencial federada OIDC, limitada a push en main de este repo
 az ad app federated-credential create --id "$APP_ID" --parameters '{
   "name": "centinela-main-branch",
   "issuer": "https://token.actions.githubusercontent.com",
@@ -158,18 +161,34 @@ az ad app federated-credential create --id "$APP_ID" --parameters '{
   "audiences": ["api://AzureADTokenExchange"]
 }'
 
-# 3. Rol mínimo suficiente (Contributor sobre el RG cubre az acr build + az containerapp update)
+# 4. Rol mínimo suficiente (Contributor sobre el RG cubre el push a ACR y az containerapp update)
 az role assignment create --assignee "$APP_ID" --role "Contributor" \
   --scope "/subscriptions/bcc499f4-13e1-4b24-a323-625c216bfa94/resourceGroups/rg-centinela-dev"
+```
 
-# 4. Variables del repo (esto sí lo puede hacer cualquiera con permiso de admin en el repo de GitHub, no requiere AAD)
-gh variable set AZURE_CLIENT_ID --body "$APP_ID"
+Confirmado indirectamente (no puedo leer su App Registration por ser guest, pero sí el objeto de la asignación de rol): `az role assignment list` sobre el RG muestra `principalName: cb23ec01-d80d-461c-b3cb-6aeab9e11e4a`, `role: Contributor`, `createdOn: 2026-07-30T22:37:02Z`.
+
+Luego se completaron las variables del repo (esto sí sin depender de AAD, solo de permiso de admin en GitHub):
+
+```bash
+gh variable set AZURE_CLIENT_ID --body "cb23ec01-d80d-461c-b3cb-6aeab9e11e4a"
 gh variable set AZURE_TENANT_ID --body "f524efae-c921-4e8b-851e-b002089d974d"
 gh variable set AZURE_SUBSCRIPTION_ID --body "bcc499f4-13e1-4b24-a323-625c216bfa94"
 gh variable set ENABLE_AZURE_DEPLOY --body "true"
 ```
 
-Con eso, el próximo push a `main` despliega solo — sin ningún cambio adicional de código.
+### Evidencia real de deploy automático de punta a punta (run [30590599432](https://github.com/centinela-team/centinela/actions/runs/30590599432), commit `db72926`)
+
+Tras el fix de `az acr build` → `docker push`, el pipeline completo corrió solo, sin intervención manual: `test` → `docker` (build + push GHCR + ACR) → `deploy-azure` (login OIDC + `az containerapp update` sobre las 4 apps), los 3 jobs en verde. Verificado contra Azure real después:
+
+| App | Imagen tras el deploy automático |
+|---|---|
+| `ca-centinela-api-dev` | `acrcentineladev05.azurecr.io/centinela-ingestion-api:db72926cbe4d` |
+| `ca-centinela-scoring-dev` | `acrcentineladev05.azurecr.io/centinela-scoring-engine:db72926cbe4d` |
+| `ca-centinela-cases-dev` | `acrcentineladev05.azurecr.io/centinela-case-service:db72926cbe4d` |
+| `ca-centinela-cases-worker-dev` | `acrcentineladev05.azurecr.io/centinela-case-service:db72926cbe4d` |
+
+`db72926cbe4d` es el prefijo de 12 caracteres del SHA del commit que disparó el run — coincide exactamente, no es `:latest` ambiguo. `GET /v1/health` (api) y `GET /health` (cases) devolvieron `200` después del rollout, y las réplicas nuevas quedaron en estado `Running`, no en crashloop.
 
 ### En qué contexto la decisión sería la contraria (GitHub Actions vs. Azure DevOps/otro)
 
