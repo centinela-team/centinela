@@ -4,11 +4,17 @@
   Obtiene APPLICATIONINSIGHTS_CONNECTION_STRING y opcionalmente crea alerta.
 #>
 param(
-  [string]$ResourceGroup = "rg-centinela-dev",
-  [string]$AppInsightsName = "appi-centinela-dev",
+  [string]$ResourceGroup = "",
+  [string]$AppInsightsName = "",
   [switch]$CreateAlert,
   [string]$Email = ""
 )
+
+$rgOverride = $ResourceGroup
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $ScriptDir "params.ps1")
+if ($rgOverride) { $ResourceGroup = $rgOverride }
+if (-not $AppInsightsName) { $AppInsightsName = $script:AppInsightsName }
 
 $ErrorActionPreference = "Stop"
 $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"

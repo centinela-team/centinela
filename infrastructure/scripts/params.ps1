@@ -31,6 +31,8 @@ $NsgDataName        = "nsg-data-$Environment"
 # --- Observabilidad ---
 $LogAnalyticsName = "log-$ProjectName-$Environment"
 $AppInsightsName  = "appi-$ProjectName-$Environment"
+$ActionGroupName  = "ag-$ProjectName-$Environment"
+$ScoringAlertName = "alert-scoring-fail-$Environment"
 
 # --- Secretos ---
 $KeyVaultName = "kv-$ProjectName$Environment$UniqueSuffix"
@@ -56,6 +58,27 @@ $AppServicePlanName = "asp-$ProjectName-$Environment"
 $AppServicePlanSku  = "B1"   # mínimo con integración VNet
 $WebAppName         = "app-$ProjectName-$Environment-$UniqueSuffix"
 $Runtime            = "PYTHON:3.11"
+
+# --- Cómputo (Semana 2-3, sufijo real distinto al canónico — ver docs/architecture/master-execution-status.md) ---
+$ContainerAppsEnvName    = "cae-$ProjectName-$Environment"
+$SubnetContainerAppsName = "snet-container-apps"
+$ApiAppName              = "ca-$ProjectName-api-$Environment"
+$ScoringAppName          = "ca-$ProjectName-scoring-$Environment"
+$CasesApiAppName         = "ca-$ProjectName-cases-$Environment"
+$CasesWorkerAppName      = "ca-$ProjectName-cases-worker-$Environment"
+$AcrName                 = "acr$ProjectName${Environment}05"
+
+# --- SQL (sufijo 05, región canadacentral — ver decisions.md) ---
+$SqlServerName   = "sql-$ProjectName${Environment}05"
+$SqlDatabaseName = "sqldb-$ProjectName-$Environment"
+
+# --- Cosmos DB ---
+$CosmosAccountName   = "cosmos-$ProjectName$Environment$UniqueSuffix"
+$CosmosDatabaseName  = "centinela"
+$CosmosContainerName = "transactions"
+
+# --- Document Intelligence ---
+$DocIntelName = "cog-$ProjectName-docintel-$Environment"
 
 # --- Etiquetas ---
 $Tags = @{

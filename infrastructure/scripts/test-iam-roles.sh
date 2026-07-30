@@ -7,8 +7,9 @@
 # Requiere: az login activo con permisos de lectura de RBAC sobre el RG.
 set -euo pipefail
 
-RG="rg-centinela-dev"
-SCOPE="/subscriptions/bcc499f4-13e1-4b24-a323-625c216bfa94/resourceGroups/${RG}"
+RG="${CENTINELA_RESOURCE_GROUP:-rg-centinela-dev}"
+SUBSCRIPTION_ID="${CENTINELA_SUBSCRIPTION_ID:-bcc499f4-13e1-4b24-a323-625c216bfa94}"
+SCOPE="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG}"
 
 check_access() {
   local label="$1" object_id="$2" action_id="$3"
@@ -31,14 +32,21 @@ check_access "Servicio (ca-centinela-api-dev)" "a486fa6e-c1c7-4f2a-b713-a09adce1
 
 echo ""
 echo "=== Prueba 2/3: Analista no puede modificar configuración de infraestructura ==="
-echo "PENDIENTE: requiere un principal real con el rol 'Centinela Analista' asignado."
 echo "No se pudo crear un service principal de prueba (permiso de Azure AD del tenant"
 echo "insuficiente: 'Insufficient privileges to complete the operation' en"
-echo "'az ad sp create-for-rbac'). Una vez que un compañero del equipo tenga el rol"
-echo "asignado (ver provision-iam-roles.ps1 -AssignTo <upn> -Role Analista), correr:"
-echo '  check_access "Analista" "<objectId-del-compañero>" "Microsoft.App/containerApps/write"'
+echo "'az ad sp create-for-rbac'). Se resolvió invitando una cuenta externa como"
+echo "invitada B2B del tenant y asignándole el rol 'Centinela Analista' directamente."
+echo "Confirmado en vivo el 2026-07-30 (ver docs/architecture/decisions.md):"
+echo '  check_access "Analista" "<objectId>" "Microsoft.App/containerApps/write" -> NotAllowed'
+echo '  check_access "Analista" "<objectId>" "Microsoft.KeyVault/vaults/write" -> NotAllowed'
+echo "La cuenta invitada de prueba y sus asignaciones de rol se retiraron al terminar."
+echo "Para repetir la prueba con un principal nuevo:"
+echo '  check_access "Analista" "<objectId>" "Microsoft.App/containerApps/write"'
 
 echo ""
 echo "=== Prueba 3/3: Auditor no puede modificar ningún recurso ==="
-echo "PENDIENTE: mismo bloqueo que la prueba 2. Una vez asignado (-Role Auditor):"
-echo '  check_access "Auditor" "<objectId-del-compañero>" "Microsoft.App/containerApps/write"'
+echo "Misma metodología que la prueba 2 (rol 'Reader'). Confirmado en vivo el 2026-07-30:"
+echo '  check_access "Auditor" "<objectId>" "Microsoft.Resources/subscriptions/resourceGroups/delete" -> NotAllowed'
+echo '  check_access "Auditor" "<objectId>" "Microsoft.DocumentDB/databaseAccounts/write" -> NotAllowed'
+echo "Para repetir la prueba con un principal nuevo:"
+echo '  check_access "Auditor" "<objectId>" "Microsoft.Resources/subscriptions/resourceGroups/delete"'

@@ -4,12 +4,20 @@
   Crea action group + alerta log de scoring_fail.
 #>
 param(
-  [string]$ResourceGroup = "rg-centinela-dev",
-  [string]$AppInsightsName = "appi-centinela-dev",
-  [string]$ActionGroupName = "ag-centinela-dev",
-  [string]$AlertName = "alert-scoring-fail-dev",
+  [string]$ResourceGroup = "",
+  [string]$AppInsightsName = "",
+  [string]$ActionGroupName = "",
+  [string]$AlertName = "",
   [Parameter(Mandatory = $true)][string]$Email
 )
+
+$rgOverride = $ResourceGroup
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $ScriptDir "params.ps1")
+if ($rgOverride) { $ResourceGroup = $rgOverride }
+if (-not $AppInsightsName) { $AppInsightsName = $script:AppInsightsName }
+if (-not $ActionGroupName) { $ActionGroupName = $script:ActionGroupName }
+if (-not $AlertName) { $AlertName = $ScoringAlertName }
 
 $ErrorActionPreference = "Stop"
 $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
