@@ -57,7 +57,7 @@ B1 Linux ~ aprox. costo diario del plan; **apagar con `shutdown.ps1 -DeletePlan`
 | Decisión | Elección | Alternativas descartadas | Motivo |
 |---|---|---|---|
 | Firewall Key Vault (`kv-centineladev03`) | `defaultAction: Allow`, control de acceso vía RBAC (`Key Vault Secrets User`) | `defaultAction: Deny` + `bypass: AzureServices` | Container Apps (Consumption, sin integración VNet) no tiene IP de salida fija; el bypass `AzureServices` de Key Vault no cubre su tráfico — causaba `ForbiddenByFirewall` intermitente. RBAC ya es el control real (no hay claves en uso). |
-| Firewall Cosmos DB (`cosmos-centineladev03`) | `ipRules: ["0.0.0.0"]` ("aceptar conexiones solo desde dentro de datacenters Azure") | Restricción por IP específica, VNet service endpoint, Private Endpoint | Mismo motivo que Key Vault: sin IP de salida fija de Container Apps, restringir por IP puntual rompe el pipeline. `0.0.0.0` es el equivalente Cosmos de `AllowAzureServices` que ya usa Azure SQL. **Limitación aceptada**: según documentación de Microsoft, esta opción no aísla de otros tenants de Azure, solo bloquea internet directo. No se pudo confirmar el bloqueo empíricamente en esta sesión (una prueba directa desde fuera de Azure seguía recibiendo `401` en vez del `403` esperado, y los logs de diagnóstico no mostraron datos tras ~30 min) — la configuración quedó aplicada según lo documentado por Microsoft, pero sin verificación end-to-end propia. Pendiente de reintentar verificación en una sesión futura. |
+| Firewall Cosmos DB (`cosmos-centineladev03`) | `ipRules: ["0.0.0.0"]` ("aceptar conexiones solo desde dentro de datacenters Azure") | Restricción por IP específica, VNet service endpoint, Private Endpoint | Mismo motivo que Key Vault: sin IP de salida fija de Container Apps, restringir por IP puntual rompe el pipeline. `0.0.0.0` es el equivalente Cosmos de `AllowAzureServices` que ya usa Azure SQL. **Limitación aceptada**: según documentación de Microsoft, esta opción no aísla de otros tenants de Azure, solo bloquea internet directo. **Confirmado en vivo el 2026-07-30**: un intento real con el SDK de Cosmos (Python, `azure-cosmos`) desde fuera de Azure recibió `403 Forbidden — Request originated from IP ... through public internet. This is blocked by your Cosmos DB account firewall settings`, el error exacto documentado por Microsoft — el bloqueo sí funciona (la prueba anterior con `curl` sin header de autorización daba `401` porque nunca llegaba a la capa de firewall de la misma forma; con el SDK real sí se confirma). |
 | Aislamiento real de red para Cosmos/SQL (VNet integration de Container Apps o Private Endpoints) | Descartado en esta sesión | — | Ambas opciones requieren recrear el entorno de Container Apps (destructivo) o violan la exclusión explícita de Private Endpoints en `MASTER_AI_PROMPT.md`. El máximo aislamiento alcanzable con las restricciones actuales del proyecto es RBAC + bloqueo de internet directo, no aislamiento por tenant. |
 
 ## Nombres de recursos centralizados en params.ps1 — 2026-07-30
@@ -65,6 +65,21 @@ B1 Linux ~ aprox. costo diario del plan; **apagar con `shutdown.ps1 -DeletePlan`
 Verificación del criterio de aceptación de Semana 1 *"ningún nombre de recurso está escrito directamente en el cuerpo del script"*: no se cumplía. `params.ps1` solo centralizaba los recursos de Semana 1; los de Semana 2-3 (SQL, Cosmos, Container Apps, ACR, Document Intelligence) nunca se agregaron, así que 8 scripts (`provision-sql.ps1`, `deploy-container-apps.ps1`, `deploy-cases.ps1`, `shutdown.ps1`, `create-scoring-alert.ps1`, `setup-observability.ps1`, `load-queue-demo.ps1`, `test-iam-roles.sh`) terminaron con nombres reales escritos directamente — el peor caso, `deploy-cases.ps1`, repetía el FQDN de SQL y el endpoint de Cosmos ~10 veces.
 
 **Resuelto**: `params.ps1` extendido con los nombres reales desplegados (respetando la divergencia de sufijo ya documentada: `05` para SQL/ACR, `03` para el resto). Los 8 scripts ahora hacen dot-source de `params.ps1` y referencian sus variables; donde el script permitía override por CLI (ej. `-ServerName`), se preservó con el patrón "capturar override antes del dot-source, aplicar como fallback después" — dot-source sin este cuidado pisa silenciosamente cualquier valor pasado por parámetro, ya que `params.ps1` asigna esas mismas variables sin condicional.
+
+## Consulta de historial por cuenta — métrica de RU (README Semana 2) — 2026-07-30
+
+Criterio: *"el motor de scoring consulta el historial de una única cuenta, demostrable mediante la métrica de consumo de la consulta"*. Confirmado en el código (`backend/scoring-engine/cosmos_store.py::get_recent_by_account`): `query_items(..., partition_key=account_id)` — consulta de partición única, no un escaneo.
+
+Verificado en vivo (reproduciendo la consulta exacta con el SDK real de Cosmos, cuenta `ACC-netcheck-6622`, ventana de 72h):
+
+| Consulta | Ítems devueltos | RU consumidas |
+|---|---|---|
+| Acotada por `accountId` (la real de scoring-engine) | 2 | 2.88 |
+| Misma ventana, sin acotar por cuenta (cross-partition, todo el contenedor) | 21 | 3.52 |
+
+Con el volumen de datos actual la diferencia relativa es modesta (dataset de prueba pequeño), pero confirma lo que importa: el costo de la consulta real depende del historial de *esa* cuenta, no del tamaño total del contenedor — a escala, esa diferencia crece linealmente con el número de cuentas.
+
+De paso, esta prueba confirmó algo que había quedado sin verificar en la sesión anterior: el firewall de Cosmos (`ipRules: ["0.0.0.0"]`, ver "Endurecimiento posterior" arriba) **sí bloquea el plano de datos correctamente** — el primer intento (sin permitir mi IP) recibió `403 Forbidden — Request originated from IP ... through public internet`, el error exacto documentado por Microsoft.
 
 ## RBAC de identidad por rol (README Semana 1, §2.6) — 2026-07-29
 
