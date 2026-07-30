@@ -243,6 +243,54 @@ class CaseRepository:
         assert updated is not None
         return updated
 
+    def list_case_audit(self, case_id: UUID) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT from_status, to_status, actor_id, detail, occurred_at
+                FROM dbo.case_audit WHERE case_id = ? ORDER BY occurred_at ASC
+                """,
+                case_id,
+            )
+            rows = cur.fetchall()
+        return [
+            {
+                "fromStatus": r[0],
+                "toStatus": r[1],
+                "actorId": r[2],
+                "detail": r[3],
+                "occurredAt": self._fmt_dt(r[4]),
+            }
+            for r in rows
+        ]
+
+    def list_recent_audit(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT TOP (?) a.case_id, a.from_status, a.to_status, a.actor_id, a.detail,
+                       a.occurred_at, c.account_id
+                FROM dbo.case_audit a JOIN dbo.fraud_case c ON a.case_id = c.case_id
+                ORDER BY a.occurred_at DESC
+                """,
+                limit,
+            )
+            rows = cur.fetchall()
+        return [
+            {
+                "caseId": str(r[0]),
+                "accountId": r[6],
+                "fromStatus": r[1],
+                "toStatus": r[2],
+                "actorId": r[3],
+                "detail": r[4],
+                "occurredAt": self._fmt_dt(r[5]),
+            }
+            for r in rows
+        ]
+
     def list_documents(self, case_id: UUID) -> list[dict[str, Any]]:
         with self._connect() as conn:
             cur = conn.cursor()
@@ -410,3 +458,20 @@ class CaseRepository:
             cur.execute("SELECT COUNT(*) FROM dbo.app_user")
             (count,) = cur.fetchone()
         return count
+
+    def list_users(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT username, role, created_at, is_active FROM dbo.app_user ORDER BY created_at ASC"
+            )
+            rows = cur.fetchall()
+        return [
+            {
+                "username": r[0],
+                "role": r[1],
+                "createdAt": self._fmt_dt(r[2]),
+                "isActive": bool(r[3]),
+            }
+            for r in rows
+        ]

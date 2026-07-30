@@ -270,6 +270,53 @@ class SqliteCaseRepository:
         assert updated is not None
         return updated
 
+    def list_case_audit(self, case_id: UUID) -> list[dict[str, Any]]:
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT from_status, to_status, actor_id, detail, occurred_at
+                FROM case_audit WHERE case_id = ? ORDER BY occurred_at ASC
+                """,
+                (str(case_id),),
+            ).fetchall()
+        return [
+            {
+                "fromStatus": row["from_status"],
+                "toStatus": row["to_status"],
+                "actorId": row["actor_id"],
+                "detail": row["detail"],
+                "occurredAt": row["occurred_at"],
+            }
+            for row in rows
+        ]
+
+    def list_recent_audit(self, limit: int = 50) -> list[dict[str, Any]]:
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT a.case_id, a.from_status, a.to_status, a.actor_id, a.detail, a.occurred_at,
+                       c.account_id
+                FROM case_audit a JOIN fraud_case c ON a.case_id = c.case_id
+                ORDER BY a.occurred_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "caseId": row["case_id"],
+                "accountId": row["account_id"],
+                "fromStatus": row["from_status"],
+                "toStatus": row["to_status"],
+                "actorId": row["actor_id"],
+                "detail": row["detail"],
+                "occurredAt": row["occurred_at"],
+            }
+            for row in rows
+        ]
+
     def register_document(
         self,
         *,
@@ -459,3 +506,19 @@ class SqliteCaseRepository:
         with sqlite3.connect(self._path) as conn:
             (count,) = conn.execute("SELECT COUNT(*) FROM app_user").fetchone()
         return count
+
+    def list_users(self) -> list[dict[str, Any]]:
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT username, role, created_at, is_active FROM app_user ORDER BY created_at ASC"
+            ).fetchall()
+        return [
+            {
+                "username": row["username"],
+                "role": row["role"],
+                "createdAt": row["created_at"],
+                "isActive": bool(row["is_active"]),
+            }
+            for row in rows
+        ]

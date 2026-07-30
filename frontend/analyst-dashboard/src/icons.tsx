@@ -100,3 +100,21 @@ export function IconInbox({ size }: IconProps) {
     </svg>
   );
 }
+
+export function IconUser({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M4.5 20c1.4-4 4-6 7.5-6s6.1 2 7.5 6" />
+    </svg>
+  );
+}
+
+export function IconLock({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V7a4 4 0 018 0v4" />
+    </svg>
+  );
+}

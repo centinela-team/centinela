@@ -17,9 +17,15 @@ export type CaseDocument = {
   message?: string | null;
 };
 
+export type TriggeredRule = {
+  ruleId: string;
+  points: number;
+  evidence?: Record<string, unknown>;
+};
+
 export type CaseDetail = CaseSummary & {
   explanation?: string | null;
-  triggeredRules?: unknown[];
+  triggeredRules?: TriggeredRule[];
   documents?: CaseDocument[];
 };
 
@@ -33,6 +39,26 @@ export type AdminConfig = {
   threshold: number;
   riskyCategories: string[];
   source: string;
+};
+
+export type CaseAuditEntry = {
+  fromStatus: string | null;
+  toStatus: string;
+  actorId: string;
+  detail?: string | null;
+  occurredAt: string;
+};
+
+export type AuditFeedEntry = CaseAuditEntry & {
+  caseId: string;
+  accountId: string;
+};
+
+export type AppUser = {
+  username: string;
+  role: string;
+  createdAt: string;
+  isActive: boolean;
 };
 
 const base = "";
@@ -88,6 +114,18 @@ export async function fetchCase(caseId: string): Promise<CaseDetail> {
   return res.json();
 }
 
+export async function fetchCaseAudit(caseId: string): Promise<CaseAuditEntry[]> {
+  const res = await fetch(`${base}/v1/cases/${caseId}/audit`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`No se pudo cargar el historial (${res.status})`);
+  return res.json();
+}
+
+export async function fetchAuditFeed(limit = 50): Promise<AuditFeedEntry[]> {
+  const res = await fetch(`${base}/v1/audit?limit=${limit}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`No se pudo cargar la auditoría (${res.status})`);
+  return res.json();
+}
+
 export async function updateStatus(caseId: string, status: string): Promise<CaseDetail> {
   const res = await fetch(`${base}/v1/cases/${caseId}/status`, {
     method: "PATCH",
@@ -136,6 +174,29 @@ export async function putAdminConfig(
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ threshold, riskyCategories }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(body || `Error ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchUsers(): Promise<AppUser[]> {
+  const res = await fetch(`${base}/v1/admin/users`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`No se pudieron cargar los usuarios (${res.status})`);
+  return res.json();
+}
+
+export async function createUser(
+  username: string,
+  password: string,
+  role: string,
+): Promise<AppUser> {
+  const res = await fetch(`${base}/v1/admin/users`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ username, password, role }),
   });
   if (!res.ok) {
     const body = await res.text();
