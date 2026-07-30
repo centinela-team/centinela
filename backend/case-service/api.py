@@ -242,6 +242,13 @@ def get_case_audit(
     return repo.list_case_audit(case_id)
 
 
+@app.get("/v1/audit")
+def get_audit_feed(
+    limit: int = 50, user: CurrentUser = Depends(require_role(*READ_ROLES))
+) -> list[dict[str, Any]]:
+    return build_repo().list_recent_audit(limit=limit)
+
+
 @app.patch("/v1/cases/{case_id}/status")
 def patch_status(
     case_id: UUID,

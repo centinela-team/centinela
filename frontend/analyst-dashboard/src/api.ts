@@ -49,6 +49,11 @@ export type CaseAuditEntry = {
   occurredAt: string;
 };
 
+export type AuditFeedEntry = CaseAuditEntry & {
+  caseId: string;
+  accountId: string;
+};
+
 export type AppUser = {
   username: string;
   role: string;
@@ -112,6 +117,12 @@ export async function fetchCase(caseId: string): Promise<CaseDetail> {
 export async function fetchCaseAudit(caseId: string): Promise<CaseAuditEntry[]> {
   const res = await fetch(`${base}/v1/cases/${caseId}/audit`, { headers: authHeaders() });
   if (!res.ok) throw new Error(`No se pudo cargar el historial (${res.status})`);
+  return res.json();
+}
+
+export async function fetchAuditFeed(limit = 50): Promise<AuditFeedEntry[]> {
+  const res = await fetch(`${base}/v1/audit?limit=${limit}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`No se pudo cargar la auditoría (${res.status})`);
   return res.json();
 }
 

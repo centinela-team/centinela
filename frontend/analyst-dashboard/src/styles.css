@@ -137,6 +137,7 @@ input {
   border: 0;
   border-top: 1px solid var(--border-soft);
   background: transparent;
+  color: var(--ink);
   padding: 0.9rem 0.3rem 0;
   margin: 0;
   cursor: pointer;
@@ -703,6 +704,29 @@ input {
   font-size: 0.85rem;
 }
 
+.audit-feed-panel {
+  max-width: 720px;
+}
+
+.audit-feed-entry {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  margin: -0.4rem -0.5rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.audit-feed-entry:hover {
+  background: var(--surface-2);
+}
+
 /* ---------- Pestañas del panel admin ---------- */
 
 .admin-tabs {
@@ -1076,7 +1100,8 @@ input {
   color: var(--muted);
 }
 
-.form-grid input {
+.form-grid input,
+.form-grid select {
   border: 1px solid var(--border);
   background: var(--bg-alt);
   color: var(--ink);
@@ -1086,7 +1111,8 @@ input {
   transition: border-color 0.15s ease;
 }
 
-.form-grid input:focus {
+.form-grid input:focus,
+.form-grid select:focus {
   outline: none;
   border-color: var(--accent);
 }

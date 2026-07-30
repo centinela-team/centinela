@@ -291,6 +291,32 @@ class SqliteCaseRepository:
             for row in rows
         ]
 
+    def list_recent_audit(self, limit: int = 50) -> list[dict[str, Any]]:
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT a.case_id, a.from_status, a.to_status, a.actor_id, a.detail, a.occurred_at,
+                       c.account_id
+                FROM case_audit a JOIN fraud_case c ON a.case_id = c.case_id
+                ORDER BY a.occurred_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "caseId": row["case_id"],
+                "accountId": row["account_id"],
+                "fromStatus": row["from_status"],
+                "toStatus": row["to_status"],
+                "actorId": row["actor_id"],
+                "detail": row["detail"],
+                "occurredAt": row["occurred_at"],
+            }
+            for row in rows
+        ]
+
     def register_document(
         self,
         *,

@@ -265,6 +265,32 @@ class CaseRepository:
             for r in rows
         ]
 
+    def list_recent_audit(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT TOP (?) a.case_id, a.from_status, a.to_status, a.actor_id, a.detail,
+                       a.occurred_at, c.account_id
+                FROM dbo.case_audit a JOIN dbo.fraud_case c ON a.case_id = c.case_id
+                ORDER BY a.occurred_at DESC
+                """,
+                limit,
+            )
+            rows = cur.fetchall()
+        return [
+            {
+                "caseId": str(r[0]),
+                "accountId": r[6],
+                "fromStatus": r[1],
+                "toStatus": r[2],
+                "actorId": r[3],
+                "detail": r[4],
+                "occurredAt": self._fmt_dt(r[5]),
+            }
+            for r in rows
+        ]
+
     def list_documents(self, case_id: UUID) -> list[dict[str, Any]]:
         with self._connect() as conn:
             cur = conn.cursor()

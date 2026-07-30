@@ -86,3 +86,45 @@ def test_list_case_audit_records_open_and_transitions(tmp_path):
     assert entries[1]["toStatus"] == "IN_REVIEW"
     assert entries[1]["actorId"] == "admin"
     assert entries[1]["detail"] == "revisando"
+
+
+def test_list_recent_audit_mixes_accounts_newest_first(tmp_path):
+    repo = _repo(tmp_path)
+    case_a = repo.open_case(
+        {
+            "transactionId": "11111111-1111-4111-8111-111111111111",
+            "accountId": "ACC-A",
+            "score": 80,
+            "threshold": 60,
+        }
+    )
+    case_b = repo.open_case(
+        {
+            "transactionId": "22222222-2222-4222-8222-222222222222",
+            "accountId": "ACC-B",
+            "score": 70,
+            "threshold": 60,
+        }
+    )
+    repo.update_status(case_a, "IN_REVIEW", actor_id="admin", detail="")
+    entries = repo.list_recent_audit(limit=50)
+    assert len(entries) == 3
+    assert entries[0]["accountId"] == "ACC-A"
+    assert entries[0]["toStatus"] == "IN_REVIEW"
+    account_ids = {e["accountId"] for e in entries}
+    assert account_ids == {"ACC-A", "ACC-B"}
+    assert str(case_b) in [e["caseId"] for e in entries]
+
+
+def test_list_recent_audit_respects_limit(tmp_path):
+    repo = _repo(tmp_path)
+    for i in range(5):
+        repo.open_case(
+            {
+                "transactionId": f"{i}1111111-1111-4111-8111-11111111111{i}",
+                "accountId": f"ACC-{i}",
+                "score": 80,
+                "threshold": 60,
+            }
+        )
+    assert len(repo.list_recent_audit(limit=3)) == 3

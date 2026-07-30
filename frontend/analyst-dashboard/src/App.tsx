@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AppUser,
+  AuditFeedEntry,
   CaseAuditEntry,
   CaseDetail,
   CaseSummary,
   clearAuth,
   createUser,
+  fetchAuditFeed,
   fetchCase,
   fetchCaseAudit,
   fetchCases,
@@ -418,6 +420,71 @@ function UsersPanel() {
   );
 }
 
+function AuditFeedPanel({ onSelectCase }: { onSelectCase: (caseId: string) => void }) {
+  const [entries, setEntries] = useState<AuditFeedEntry[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(true);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setEntries(await fetchAuditFeed(50));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Error al cargar auditoría");
+      } finally {
+        setBusy(false);
+      }
+    })();
+  }, []);
+
+  return (
+    <div className="panel detail audit-feed-panel">
+      <section>
+        <h3>
+          <IconAlert size={18} />
+          Actividad reciente
+        </h3>
+        <p className="form-hint">Últimos {entries.length} movimientos de todos los casos.</p>
+        {error ? (
+          <p className="banner">
+            <IconAlert size={16} />
+            {error}
+          </p>
+        ) : null}
+        {!busy && entries.length === 0 ? (
+          <p className="muted">Sin movimientos todavía.</p>
+        ) : (
+          <ul className="audit-trail">
+            {entries.map((entry, i) => (
+              <li key={i}>
+                <button
+                  type="button"
+                  className="audit-feed-entry"
+                  onClick={() => onSelectCase(entry.caseId)}
+                >
+                  <span className="audit-trail-status">
+                    <strong>{entry.accountId}</strong> ·{" "}
+                    {entry.fromStatus ? (
+                      <>
+                        {STATUS_LABEL[entry.fromStatus] ?? entry.fromStatus} →{" "}
+                      </>
+                    ) : null}
+                    {STATUS_LABEL[entry.toStatus] ?? entry.toStatus}
+                  </span>
+                  <span className="audit-trail-meta">
+                    {entry.actorId} · {formatDateTime(entry.occurredAt)}
+                  </span>
+                  {entry.detail ? <p>{entry.detail}</p> : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
 const SCORING_RULES = [
   {
     id: "VELOCITY",
@@ -446,7 +513,7 @@ export default function App() {
   const [token, setToken] = useState<string | null>(stored?.token ?? null);
   const [role, setRole] = useState<string | null>(stored?.role ?? null);
   const [username, setUsername] = useState<string | null>(stored?.username ?? null);
-  const [view, setView] = useState<"cases" | "admin">("cases");
+  const [view, setView] = useState<"cases" | "admin" | "audit">("cases");
 
   const [cases, setCases] = useState<CaseSummary[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
@@ -594,6 +661,14 @@ export default function App() {
             <IconLayers size={18} />
             Casos
           </button>
+          <button
+            type="button"
+            className={view === "audit" ? "nav-item active" : "nav-item"}
+            onClick={() => setView("audit")}
+          >
+            <IconAlert size={18} />
+            Auditoría
+          </button>
           {role === "administrador" ? (
             <button
               type="button"
@@ -637,7 +712,9 @@ export default function App() {
 
       <div className="app-main">
         <header className="topbar">
-          <h1>{view === "admin" ? "Panel de administración" : "Cola de casos"}</h1>
+          <h1>
+            {view === "admin" ? "Panel de administración" : view === "audit" ? "Auditoría" : "Cola de casos"}
+          </h1>
           <div className="topbar-actions">
             <button type="button" className="btn" onClick={() => void reload()} disabled={busy}>
               <IconRefresh size={16} />
@@ -655,6 +732,13 @@ export default function App() {
 
         {view === "admin" ? (
           <AdminPanel />
+        ) : view === "audit" ? (
+          <AuditFeedPanel
+            onSelectCase={(caseId) => {
+              setView("cases");
+              setSelectedId(caseId);
+            }}
+          />
         ) : (
           <div className="layout">
             <aside className="panel list">
