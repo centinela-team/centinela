@@ -111,11 +111,35 @@ class CurrentUser:
     role: str
 
 
+_jwt_secret_cache: str | None = None
+
+
 def _jwt_secret() -> str:
+    """Cachea el secreto en memoria — no cambia durante la vida del proceso y
+    se consulta en cada request autenticado, evitar golpear Key Vault cada vez."""
+    global _jwt_secret_cache
+    if _jwt_secret_cache:
+        return _jwt_secret_cache
+
+    vault_name = _env("KEY_VAULT_NAME")
+    if vault_name:
+        try:
+            from azure.keyvault.secrets import SecretClient
+
+            client = SecretClient(
+                vault_url=f"https://{vault_name}.vault.azure.net/",
+                credential=DefaultAzureCredential(),
+            )
+            _jwt_secret_cache = client.get_secret("AuthJwtSecret").value
+            return _jwt_secret_cache
+        except Exception:  # noqa: BLE001 — cae a env var si Key Vault falla
+            logger.exception("No se pudo leer AUTH_JWT_SECRET de Key Vault, usando env var")
+
     secret = _env("AUTH_JWT_SECRET")
     if not secret:
-        raise RuntimeError("AUTH_JWT_SECRET es obligatorio")
-    return secret
+        raise RuntimeError("AUTH_JWT_SECRET es obligatorio (Key Vault o env var)")
+    _jwt_secret_cache = secret
+    return _jwt_secret_cache
 
 
 def get_current_user(authorization: str | None = Header(default=None)) -> CurrentUser:
