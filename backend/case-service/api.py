@@ -14,9 +14,10 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
-from auth import InvalidToken, decode_token, hash_password, issue_token, verify_password
+from auth import ROLES, InvalidToken, decode_token, hash_password, issue_token, verify_password
 from config_merge import resolve_config
-from cosmos_config_store import CosmosConfigStore
+from cosmos_config_store import ConfigStore, CosmosConfigStore
+from local_config_store import LocalConfigStore
 from sqlite_repository import SqliteCaseRepository
 from azure.identity import DefaultAzureCredential
 
@@ -92,6 +93,19 @@ class AdminConfigRequest(BaseModel):
                 raise ValueError(f"categoryCode inválido: {c!r} (esperado código MCC numérico)")
             cleaned.append(c)
         return cleaned
+
+
+class UserCreateRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=128)
+    password: str = Field(..., min_length=8)
+    role: str
+
+    @field_validator("role")
+    @classmethod
+    def _validate_role(cls, v: str) -> str:
+        if v not in ROLES:
+            raise ValueError(f"rol inválido: {v!r} (esperado uno de {sorted(ROLES)})")
+        return v
 
 
 class LoginRequest(BaseModel):
@@ -216,6 +230,16 @@ def get_case(case_id: UUID, user: CurrentUser = Depends(require_role(*READ_ROLES
         raise HTTPException(status_code=404, detail="Caso no encontrado")
     case["documents"] = build_repo().list_documents(case_id)
     return case
+
+
+@app.get("/v1/cases/{case_id}/audit")
+def get_case_audit(
+    case_id: UUID, user: CurrentUser = Depends(require_role(*READ_ROLES))
+) -> list[dict[str, Any]]:
+    repo = build_repo()
+    if not repo.get_case(case_id):
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    return repo.list_case_audit(case_id)
 
 
 @app.patch("/v1/cases/{case_id}/status")
@@ -385,10 +409,13 @@ def list_documents(
     return build_repo().list_documents(case_id)
 
 
-def build_config_store() -> CosmosConfigStore:
+def build_config_store() -> ConfigStore:
     endpoint = _env("COSMOS_DB_ENDPOINT")
     if not endpoint:
-        raise RuntimeError("COSMOS_DB_ENDPOINT es obligatorio para /v1/admin/config")
+        # Desarrollo local sin Cosmos: mismo patrón que CASE_STORE=sqlite o el
+        # fallback local de Document Intelligence — no debe romper el panel de
+        # administrador solo porque no hay Azure configurado.
+        return LocalConfigStore(_env("LOCAL_CONFIG_PATH", "./data/admin_config.json"))
     return CosmosConfigStore(
         endpoint=endpoint,
         database_name=_env("COSMOS_DB_DATABASE", "centinela"),
@@ -405,10 +432,13 @@ def get_admin_config(user: CurrentUser = Depends(require_role("administrador")))
         int(_env("SCORING_THRESHOLD", "60")),
         {x.strip() for x in _env("RISKY_MERCHANT_CATEGORIES", "7995,6051,7801").split(",") if x.strip()},
     )
+    source = "env_default"
+    if doc:
+        source = "cosmos" if isinstance(store, CosmosConfigStore) else "local_file"
     return {
         "threshold": threshold,
         "riskyCategories": sorted(risky),
-        "source": "cosmos" if doc else "env_default",
+        "source": source,
     }
 
 
@@ -419,3 +449,20 @@ def put_admin_config(
 ) -> dict[str, Any]:
     store = build_config_store()
     return store.upsert_config_doc(body.threshold, body.riskyCategories, updated_by=user.username)
+
+
+@app.get("/v1/admin/users")
+def list_users(user: CurrentUser = Depends(require_role("administrador"))) -> list[dict[str, Any]]:
+    return build_repo().list_users()
+
+
+@app.post("/v1/admin/users", status_code=201)
+def create_user(
+    body: UserCreateRequest,
+    user: CurrentUser = Depends(require_role("administrador")),
+) -> dict[str, Any]:
+    repo = build_repo()
+    if repo.get_user_by_username(body.username):
+        raise HTTPException(status_code=409, detail="El usuario ya existe")
+    repo.create_user(body.username, hash_password(body.password), body.role)
+    return {"username": body.username, "role": body.role}
