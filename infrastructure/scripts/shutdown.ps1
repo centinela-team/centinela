@@ -12,12 +12,11 @@ param(
 
 $ErrorActionPreference = "Continue"
 $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
-$ResourceGroup = "rg-centinela-dev"
 
-$workers = @(
-  "ca-centinela-scoring-dev",
-  "ca-centinela-cases-worker-dev"
-)
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $ScriptDir "params.ps1")
+
+$workers = @($ScoringAppName, $CasesWorkerAppName)
 
 foreach ($app in $workers) {
   Write-Host "==> min-replicas 0: $app"
@@ -30,12 +29,12 @@ foreach ($app in $workers) {
 }
 
 if ($IncludeSqlDelete) {
-  Write-Host "==> Eliminando SQL sql-centineladev05"
+  Write-Host "==> Eliminando SQL $SqlServerName"
   if ($WhatIf) {
     Write-Host "[WhatIf] az sql server delete ..."
   }
   else {
-    & $az sql server delete -g $ResourceGroup -n sql-centineladev05 --yes
+    & $az sql server delete -g $ResourceGroup -n $SqlServerName --yes
   }
 }
 

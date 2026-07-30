@@ -12,11 +12,18 @@
 param(
   [string]$ApiBase = "http://127.0.0.1:8000",
   [int]$Count = 30,
-  [string]$ResourceGroup = "rg-centinela-dev",
-  [string]$Namespace = "sb-centineladev03",
-  [string]$Queue = "transactions",
+  [string]$ResourceGroup = "",
+  [string]$Namespace = "",
+  [string]$Queue = "",
   [switch]$SkipSend
 )
+
+$rgOverride = $ResourceGroup
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $ScriptDir "params.ps1")
+if ($rgOverride) { $ResourceGroup = $rgOverride }
+if (-not $Namespace) { $Namespace = $ServiceBusNamespace }
+if (-not $Queue) { $Queue = $QueueIngestionName }
 
 $ErrorActionPreference = "Stop"
 $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"

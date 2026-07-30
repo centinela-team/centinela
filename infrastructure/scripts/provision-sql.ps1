@@ -10,14 +10,16 @@
 #>
 param(
   [string]$Location = "canadacentral",
-  [string]$ServerName = "sql-centineladev05",
-  [string]$DatabaseName = "sqldb-centinela-dev"
+  [string]$ServerName = "",
+  [string]$DatabaseName = ""
 )
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $sqlLocation = $Location   # preservar el default/override de este script antes de dot-source
 . (Join-Path $ScriptDir "params.ps1")
 $Location = $sqlLocation   # params.ps1 fija $Location=eastus; SQL usa su propia región
+if (-not $ServerName) { $ServerName = $SqlServerName }
+if (-not $DatabaseName) { $DatabaseName = $SqlDatabaseName }
 
 $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
 if (-not (Test-Path $az)) {

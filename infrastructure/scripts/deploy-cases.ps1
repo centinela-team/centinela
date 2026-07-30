@@ -4,14 +4,23 @@
   Build/push case-service y despliega worker + API en Container Apps.
 #>
 param(
-  [string]$ResourceGroup = "rg-centinela-dev",
-  [string]$AcrName = "acrcentineladev05",
-  [string]$EnvName = "cae-centinela-dev",
-  [string]$WorkerApp = "ca-centinela-cases-worker-dev",
-  [string]$ApiApp = "ca-centinela-cases-dev",
+  [string]$ResourceGroup = "",
+  [string]$AcrName = "",
+  [string]$EnvName = "",
+  [string]$WorkerApp = "",
+  [string]$ApiApp = "",
   [string]$ImageTag = "latest",
   [switch]$SkipBuild
 )
+
+$rgOverride = $ResourceGroup
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $ScriptDir "params.ps1")
+if ($rgOverride) { $ResourceGroup = $rgOverride }
+if (-not $AcrName) { $AcrName = $script:AcrName }
+if (-not $EnvName) { $EnvName = $ContainerAppsEnvName }
+if (-not $WorkerApp) { $WorkerApp = $CasesWorkerAppName }
+if (-not $ApiApp) { $ApiApp = $CasesApiAppName }
 
 $ErrorActionPreference = "Continue"
 $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
@@ -45,18 +54,18 @@ if ($LASTEXITCODE -ne 0 -or -not $workerExists) {
     --env-vars `
       "ROLE=worker" `
       "CASE_STORE=azure_sql" `
-      "SQL_SERVER_FQDN=sql-centineladev05.database.windows.net" `
-      "SQL_DATABASE_NAME=sqldb-centinela-dev" `
-      "SERVICE_BUS_NAMESPACE=sb-centineladev03.servicebus.windows.net" `
-      "SERVICE_BUS_QUEUE_CASES=cases" `
+      "SQL_SERVER_FQDN=$SqlServerName.database.windows.net" `
+      "SQL_DATABASE_NAME=$SqlDatabaseName" `
+      "SERVICE_BUS_NAMESPACE=$ServiceBusNamespace.servicebus.windows.net" `
+      "SERVICE_BUS_QUEUE_CASES=$QueueCasesName" `
       "ENABLE_EXPLAINER=true"
 }
 else {
   & $az containerapp update -g $ResourceGroup -n $WorkerApp --image $Image `
     --set-env-vars "ROLE=worker" "CASE_STORE=azure_sql" `
-    "SQL_SERVER_FQDN=sql-centineladev05.database.windows.net" `
-    "SQL_DATABASE_NAME=sqldb-centinela-dev" `
-    "SERVICE_BUS_NAMESPACE=sb-centineladev03.servicebus.windows.net" `
+    "SQL_SERVER_FQDN=$SqlServerName.database.windows.net" `
+    "SQL_DATABASE_NAME=$SqlDatabaseName" `
+    "SERVICE_BUS_NAMESPACE=$ServiceBusNamespace.servicebus.windows.net" `
     "ENABLE_EXPLAINER=true"
   & $az containerapp update -g $ResourceGroup -n $WorkerApp --min-replicas 1 --max-replicas 3
 }
@@ -76,14 +85,14 @@ if ($LASTEXITCODE -ne 0 -or -not $apiExists) {
     --env-vars `
       "ROLE=api" `
       "CASE_STORE=azure_sql" `
-      "SQL_SERVER_FQDN=sql-centineladev05.database.windows.net" `
-      "SQL_DATABASE_NAME=sqldb-centinela-dev" `
+      "SQL_SERVER_FQDN=$SqlServerName.database.windows.net" `
+      "SQL_DATABASE_NAME=$SqlDatabaseName" `
       "UPLOAD_MODE=sas" `
-      "STORAGE_ACCOUNT_NAME=stcentineladev03" `
+      "STORAGE_ACCOUNT_NAME=$StorageAccountName" `
       "CORS_ORIGINS=*" `
-      "COSMOS_DB_ENDPOINT=https://cosmos-centineladev03.documents.azure.com:443/" `
-      "COSMOS_DB_DATABASE=centinela" `
-      "COSMOS_DB_CONTAINER=transactions" `
+      "COSMOS_DB_ENDPOINT=https://$CosmosAccountName.documents.azure.com:443/" `
+      "COSMOS_DB_DATABASE=$CosmosDatabaseName" `
+      "COSMOS_DB_CONTAINER=$CosmosContainerName" `
       "DOCUMENT_INTELLIGENCE_ENDPOINT="
   # vacio = fallback local. Completar con el output documentIntelligenceEndpoint
   # de main.bicep tras desplegar infrastructure/bicep/modules/document-intelligence.bicep
@@ -91,16 +100,16 @@ if ($LASTEXITCODE -ne 0 -or -not $apiExists) {
 else {
   & $az containerapp update -g $ResourceGroup -n $ApiApp --image $Image `
     --set-env-vars "ROLE=api" "CASE_STORE=azure_sql" `
-    "SQL_SERVER_FQDN=sql-centineladev05.database.windows.net" `
+    "SQL_SERVER_FQDN=$SqlServerName.database.windows.net" `
     "UPLOAD_MODE=sas" "CORS_ORIGINS=*" `
-    "COSMOS_DB_ENDPOINT=https://cosmos-centineladev03.documents.azure.com:443/" `
-    "COSMOS_DB_DATABASE=centinela" `
-    "COSMOS_DB_CONTAINER=transactions"
+    "COSMOS_DB_ENDPOINT=https://$CosmosAccountName.documents.azure.com:443/" `
+    "COSMOS_DB_DATABASE=$CosmosDatabaseName" `
+    "COSMOS_DB_CONTAINER=$CosmosContainerName"
 }
 
 $sub = & $az account show --query id -o tsv
-$sbScope = "/subscriptions/$sub/resourceGroups/$ResourceGroup/providers/Microsoft.ServiceBus/namespaces/sb-centineladev03"
-$stScope = "/subscriptions/$sub/resourceGroups/$ResourceGroup/providers/Microsoft.Storage/storageAccounts/stcentineladev03"
+$sbScope = "/subscriptions/$sub/resourceGroups/$ResourceGroup/providers/Microsoft.ServiceBus/namespaces/$ServiceBusNamespace"
+$stScope = "/subscriptions/$sub/resourceGroups/$ResourceGroup/providers/Microsoft.Storage/storageAccounts/$StorageAccountName"
 $acrId = & $az acr show -n $AcrName --query id -o tsv
 
 foreach ($app in @($WorkerApp, $ApiApp)) {
@@ -121,8 +130,7 @@ foreach ($app in @($WorkerApp, $ApiApp)) {
 $apiPrincipalId = & $az containerapp show -g $ResourceGroup -n $ApiApp --query identity.principalId -o tsv
 Write-Host "Roles adicionales para $ApiApp ($apiPrincipalId)"
 
-$docIntelName = "cog-centinela-docintel-dev"
-$docIntelScope = "/subscriptions/$sub/resourceGroups/$ResourceGroup/providers/Microsoft.CognitiveServices/accounts/$docIntelName"
+$docIntelScope = "/subscriptions/$sub/resourceGroups/$ResourceGroup/providers/Microsoft.CognitiveServices/accounts/$DocIntelName"
 & $az role assignment create --assignee-object-id $apiPrincipalId --assignee-principal-type ServicePrincipal `
   --role "Cognitive Services User" --scope $docIntelScope 2>$null
 
@@ -130,12 +138,12 @@ $docIntelScope = "/subscriptions/$sub/resourceGroups/$ResourceGroup/providers/Mi
 # no az role assignment create. 00000000-0000-0000-0000-000000000002 es el ID
 # built-in de "Cosmos DB Built-in Data Contributor" (documentado por Microsoft).
 & $az cosmosdb sql role assignment create `
-  --account-name cosmos-centineladev03 --resource-group $ResourceGroup `
+  --account-name $CosmosAccountName --resource-group $ResourceGroup `
   --scope "/" --principal-id $apiPrincipalId `
   --role-definition-id 00000000-0000-0000-0000-000000000002 2>$null
 
 Write-Host "==> Grant SQL AAD (requiere pyodbc + ser admin AAD del server)"
-$env:SQL_SERVER_FQDN = "sql-centineladev05.database.windows.net"
+$env:SQL_SERVER_FQDN = "$SqlServerName.database.windows.net"
 $env:Path = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin;" + $env:Path
 Push-Location (Join-Path $RepoRoot "backend\case-service")
 try {

@@ -14,16 +14,33 @@
   con el equipo primero — no es un ajuste incremental.
 #>
 param(
-  [string]$ResourceGroup = "rg-centinela-dev",
-  [string]$Location = "eastus",
-  [string]$EnvName = "cae-centinela-dev",
-  [string]$VNetName = "vnet-centinela-dev",
-  [string]$SubnetContainerAppsName = "snet-container-apps",
-  [string]$ApiApp = "ca-centinela-api-dev",
-  [string]$ScoringApp = "ca-centinela-scoring-dev",
+  [string]$ResourceGroup = "",
+  [string]$Location = "",
+  [string]$EnvName = "",
+  [string]$VNetName = "",
+  [string]$SubnetContainerAppsName = "",
+  [string]$ApiApp = "",
+  [string]$ScoringApp = "",
   [string]$ApiImage = "",
   [string]$ScoringImage = ""
 )
+
+# Capturar overrides del caller ANTES del dot-source: params.ps1 asigna estas
+# mismas variables sin condicional y las pisaría silenciosamente.
+$rgOverride = $ResourceGroup
+$vnetOverride = $VNetName
+$subnetOverride = $SubnetContainerAppsName
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $ScriptDir "params.ps1")
+
+if ($rgOverride) { $ResourceGroup = $rgOverride }
+if ($vnetOverride) { $VNetName = $vnetOverride }
+if ($subnetOverride) { $SubnetContainerAppsName = $subnetOverride }
+if (-not $Location) { $Location = "eastus" }
+if (-not $EnvName) { $EnvName = $ContainerAppsEnvName }
+if (-not $ApiApp) { $ApiApp = $ApiAppName }
+if (-not $ScoringApp) { $ScoringApp = $ScoringAppName }
 
 $ErrorActionPreference = "Stop"
 $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
@@ -59,8 +76,8 @@ Write-Host "==> API $ApiApp"
   --min-replicas 0 --max-replicas 3 `
   --cpu 0.25 --memory 0.5Gi `
   --env-vars `
-    "STORAGE_ACCOUNT_NAME=stcentineladev03" `
-    "SERVICE_BUS_NAMESPACE=sb-centineladev03.servicebus.windows.net" `
+    "STORAGE_ACCOUNT_NAME=$StorageAccountName" `
+    "SERVICE_BUS_NAMESPACE=$ServiceBusNamespace.servicebus.windows.net" `
     "RATE_LIMIT_MAX=60"
 
 Write-Host "==> Scoring $ScoringApp (sin ingress; escala por polling interno)"
@@ -70,8 +87,8 @@ Write-Host "==> Scoring $ScoringApp (sin ingress; escala por polling interno)"
   --min-replicas 0 --max-replicas 5 `
   --cpu 0.25 --memory 0.5Gi `
   --env-vars `
-    "SERVICE_BUS_NAMESPACE=sb-centineladev03.servicebus.windows.net" `
-    "COSMOS_DB_ENDPOINT=https://cosmos-centineladev03.documents.azure.com:443/" `
+    "SERVICE_BUS_NAMESPACE=$ServiceBusNamespace.servicebus.windows.net" `
+    "COSMOS_DB_ENDPOINT=https://$CosmosAccountName.documents.azure.com:443/" `
     "SCORING_THRESHOLD=60"
 
 $fqdn = & $az containerapp show -g $ResourceGroup -n $ApiApp --query properties.configuration.ingress.fqdn -o tsv
