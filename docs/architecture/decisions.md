@@ -19,6 +19,8 @@ Documento vivo. Se actualiza cada semana.
 
 B1 Linux ~ aprox. costo diario del plan; **apagar con `shutdown.ps1 -DeletePlan`** al cierre de jornada para minimizar crédito.
 
+**Nota 2026-07-30**: esta referencia a `-DeletePlan` es de la era App Service (Semana 1) y quedó desactualizada — `shutdown.ps1` fue reescrito cuando el proyecto migró a Container Apps (Semana 3) y hoy no tiene ese parámetro; escala a cero las Container Apps worker (`ScoringAppName`, `CasesWorkerAppName`) y opcionalmente borra el servidor SQL (`-IncludeSqlDelete`). Ver "Verificación de apagado y fecha de creación de la suscripción" más abajo.
+
 ## Semana 2
 
 | Decisión | Elección | Alternativas descartadas | Motivo |
@@ -80,6 +82,20 @@ Verificado en vivo (reproduciendo la consulta exacta con el SDK real de Cosmos, 
 Con el volumen de datos actual la diferencia relativa es modesta (dataset de prueba pequeño), pero confirma lo que importa: el costo de la consulta real depende del historial de *esa* cuenta, no del tamaño total del contenedor — a escala, esa diferencia crece linealmente con el número de cuentas.
 
 De paso, esta prueba confirmó algo que había quedado sin verificar en la sesión anterior: el firewall de Cosmos (`ipRules: ["0.0.0.0"]`, ver "Endurecimiento posterior" arriba) **sí bloquea el plano de datos correctamente** — el primer intento (sin permitir mi IP) recibió `403 Forbidden — Request originated from IP ... through public internet`, el error exacto documentado por Microsoft.
+
+## Verificación de apagado y fecha de creación de la suscripción — 2026-07-30
+
+Dos criterios de aceptación de Semana 1 que parecían no verificables retroactivamente en realidad sí lo son, vía Cost Management y Activity Log (ambos con datos reales, no simulados):
+
+**"La suscripción se creó el primer día del proyecto y su vigencia cubre los 21 días con margen"** — **no se cumple literalmente**:
+- Primer commit del repositorio: `2026-07-14`.
+- Primer dato de facturación de Azure (`Microsoft.CostManagement/query`, consultado desde enero sin encontrar nada anterior): `2026-07-22`.
+- Primera operación real de despliegue de infraestructura en el Activity Log (VNet, Log Analytics, Service Bus): `2026-07-24T13:23:04Z`.
+- Fin de la promoción de nivel gratuito de la suscripción: `2027-07-21` — 364 días después del primer dato de facturación, consistente con el ciclo estándar de 12 meses de Azure for Students.
+
+Hay una brecha real de 8-10 días entre el inicio del proyecto (código) y la creación/primer uso de la suscripción — el equipo empezó a diseñar/codificar antes de tener la suscripción lista. La vigencia de 12 meses cubre los 21 días del proyecto con margen amplio, esa parte sí se cumple.
+
+**"El script de apagado se ejecutó al cierre de cada jornada"** — **no verificable con precisión, pero con evidencia parcial real**: el Activity Log muestra 55 operaciones de escritura sobre Container Apps, todas concentradas en `2026-07-28` y `2026-07-29` — porque Container Apps recién se desplegó esa semana (no existió durante las 3 semanas completas del proyecto; antes el cómputo era App Service B1, ya retirado). El log de actividad no distingue, sin inspeccionar el cuerpo de cada request, cuáles de esas 55 escrituras fueron específicamente `min-replicas 0` (apagado) vs. otros cambios (imagen, env vars). No se puede afirmar que el apagado se ejecutó "cada jornada" durante todo el proyecto — como mucho, hay actividad de gestión de cómputo en los 2 días donde Container Apps existió.
 
 ## RBAC de identidad por rol (README Semana 1, §2.6) — 2026-07-29
 
