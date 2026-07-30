@@ -10,12 +10,38 @@ Campo canónico: `correlationId` (UUID) propagado en:
 4. Documento Cosmos / caso SQL
 5. Logs del scoring: `transactionId=… correlationId=… duration_ms=…`
 
-Dado un `transactionId` o `correlationId`, reconstruir el recorrido buscando ese valor en:
+### Traza real en Application Insights (2026-07-30)
 
-- Logs de la API (`http_request … correlationId=`)
-- Logs del scoring (`scored …` / `scoring_fail …`)
-- Cosmos (`transactions`)
-- Casos (`fraud_case` + auditoría)
+Los 3 servicios (`ingestion-api`, `scoring-engine`, `case-service` — este
+último no tenía telemetría hasta esta fecha) reportan a Application Insights
+vía `azure.monitor.opentelemetry`. Dado un `transactionId`, una sola consulta
+KQL trae el recorrido completo de las 3 etapas con timestamps reales:
+
+```kusto
+search in (requests, dependencies, traces) "<transactionId>"
+| project timestamp, cloud_RoleName, name, message
+| order by timestamp asc
+```
+
+Verificado en vivo con una transacción de fraude real: persistencia en Blob
+(`centinela-ingestion-api`, 17:30:43), scored (`centinela-scoring-engine`,
+17:30:45, score=67, duration_ms=1143), caso abierto
+(`centinela-case-service-worker`, 17:31:44).
+
+**Nota honesta**: el contexto de traza (`traceparent`) se propaga
+automáticamente en las llamadas HTTP y del SDK de Azure dentro de cada
+servicio, pero **no queda enlazado en un único `operation_Id`** a través del
+salto de Service Bus — cada servicio aparece como su propia raíz de
+operación. La reconstrucción del recorrido completo es por búsqueda de
+`transactionId` (arriba), no por un árbol de traza único. Cumple el
+requisito de "recorrido completo con tiempos de cada etapa, no solo un panel
+agregado", pero no es un trace tree de un solo clic.
+
+**Bug real encontrado y corregido**: `case-service/worker.py` usaba `print()`
+en toda su lógica — el auto-instrumentado de OpenTelemetry solo captura
+`logging`, nunca `print()`. Sin este fix, la telemetría de case-service nunca
+habría aparecido aunque `APPLICATIONINSIGHTS_CONNECTION_STRING` estuviera
+configurado.
 
 ## Métricas operativas (queries App Insights / Log Analytics)
 

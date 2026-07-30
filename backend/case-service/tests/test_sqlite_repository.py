@@ -128,3 +128,45 @@ def test_list_recent_audit_respects_limit(tmp_path):
             }
         )
     assert len(repo.list_recent_audit(limit=3)) == 3
+
+
+def test_list_cases_missing_explanation_excludes_explained(tmp_path):
+    repo = _repo(tmp_path)
+    case_a = repo.open_case(
+        {
+            "transactionId": "11111111-1111-4111-8111-111111111111",
+            "accountId": "ACC-A",
+            "score": 80,
+            "threshold": 60,
+            "triggeredRules": [{"ruleId": "VELOCITY", "points": 35, "evidence": {}}],
+        }
+    )
+    repo.open_case(
+        {
+            "transactionId": "22222222-2222-4222-8222-222222222222",
+            "accountId": "ACC-B",
+            "score": 70,
+            "threshold": 60,
+        }
+    )
+    repo.save_explanation(case_a, "ya explicado")
+
+    pending = repo.list_cases_missing_explanation(limit=20)
+
+    assert len(pending) == 1
+    assert pending[0]["score"] == 70
+    assert pending[0]["threshold"] == 60
+
+
+def test_list_cases_missing_explanation_respects_limit(tmp_path):
+    repo = _repo(tmp_path)
+    for i in range(5):
+        repo.open_case(
+            {
+                "transactionId": f"{i}1111111-1111-4111-8111-11111111111{i}",
+                "accountId": f"ACC-{i}",
+                "score": 80,
+                "threshold": 60,
+            }
+        )
+    assert len(repo.list_cases_missing_explanation(limit=3)) == 3

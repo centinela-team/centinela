@@ -74,6 +74,8 @@ jobs:
   docker:
     needs: test
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -95,6 +97,7 @@ jobs:
           SHA='${{ github.sha }}'
           echo "api=${{ env.REGISTRY }}/${OWNER}/centinela-ingestion-api" >> "$GITHUB_OUTPUT"
           echo "scoring=${{ env.REGISTRY }}/${OWNER}/centinela-scoring-engine" >> "$GITHUB_OUTPUT"
+          echo "cases=${{ env.REGISTRY }}/${OWNER}/centinela-case-service" >> "$GITHUB_OUTPUT"
           echo "tag=${SHA::12}" >> "$GITHUB_OUTPUT"
 
       - name: Build & push ingestion-api
@@ -119,25 +122,57 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build & push case-service
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/case-service/Dockerfile
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ steps.meta.outputs.cases }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.cases }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Requiere que exista un App Registration + credencial federada OIDC en Azure
+  # AD (ver docs/architecture/decisions.md "CD real — activación pendiente") y
+  # las variables de repo AZURE_CLIENT_ID / AZURE_TENANT_ID /
+  # AZURE_SUBSCRIPTION_ID / ENABLE_AZURE_DEPLOY=true. Hasta entonces este job
+  # queda "skipped" en cada run — no es un job roto, es un job apagado.
   deploy-azure:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_AZURE_DEPLOY == 'true'
     needs: docker
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Azure login
+
+      - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      - name: Deploy Container Apps
-        env:
-          API_IMAGE: ghcr.io/${{ github.repository_owner }}/centinela-ingestion-api:latest
-          SCORING_IMAGE: ghcr.io/${{ github.repository_owner }}/centinela-scoring-engine:latest
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build images en ACR
+        # Las Container Apps reales tiran de acrcentineladev05.azurecr.io, no
+        # de GHCR (confirmado 2026-07-30 vía `az containerapp show`) — GHCR
+        # arriba es solo caché/artefacto gratis, no lo que corre en Azure.
+        # az acr build construye del lado de ACR (plano de gestión, cubierto
+        # por el rol Contributor del service principal), sin necesitar un
+        # segundo docker login/push data-plane.
         run: |
-          OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
-          API_IMAGE="ghcr.io/${OWNER}/centinela-ingestion-api:latest"
-          SCORING_IMAGE="ghcr.io/${OWNER}/centinela-scoring-engine:latest"
-          pwsh -File infrastructure/scripts/deploy-container-apps.ps1 \
-            -ApiImage "$API_IMAGE" \
-            -ScoringImage "$SCORING_IMAGE" || \
-          bash -c "echo Use deploy-container-apps.ps1 locally if pwsh missing in runner"
+          TAG="${{ needs.docker.outputs.tag }}"
+          pids=()
+          az acr build --registry acrcentineladev05 --image "centinela-ingestion-api:$TAG" backend/ingestion-api & pids+=($!)
+          az acr build --registry acrcentineladev05 --image "centinela-scoring-engine:$TAG" backend/scoring-engine & pids+=($!)
+          az acr build --registry acrcentineladev05 --image "centinela-case-service:$TAG" -f backend/case-service/Dockerfile backend & pids+=($!)
+          fail=0
+          for pid in "${pids[@]}"; do wait "$pid" || fail=1; done
+          exit $fail
+
+      - name: Deploy Container Apps (idempotente)
+        run: |
+          bash infrastructure/scripts/deploy-idempotent.sh "${{ needs.docker.outputs.tag }}"
