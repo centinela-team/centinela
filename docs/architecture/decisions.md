@@ -128,3 +128,49 @@ Prueba 1 es evidencia sólida y suficiente por sí sola (ninguno de los roles de
 
 - **A nivel de infraestructura Azure**: la autenticación ocurre cuando `DefaultAzureCredential` (usado en todos los workers y en `case-service/api.py`) obtiene un token para la identidad gestionada del recurso — ej. la managed identity de `scoring-engine` autenticándose ante Azure AD para poder llamar a Cosmos. La autorización ocurre después, cuando Azure RBAC evalúa si esa identidad ya autenticada tiene un rol asignado que permita la acción concreta (ej. `Cosmos DB Built-in Data Contributor` para escribir un documento) — es exactamente lo que la prueba 1 de arriba verifica desde el lado negativo.
 - **A nivel de aplicación (dashboard de analistas)**: la autenticación ocurre en `POST /v1/auth/login` (`backend/case-service/auth.py`), donde se valida la contraseña y se emite un JWT firmado. La autorización ocurre en cada request posterior, en `require_role(...)` (`backend/case-service/api.py`), que decide si el rol dentro del JWT ya validado (`analista`/`administrador`/`auditor`) puede ejecutar ese endpoint concreto — ej. solo `administrador` puede llamar `PUT /v1/admin/config`.
+
+## CI/CD real (README Semana 3, §3.x) — 2026-07-30
+
+Estado previo: `deploy-azure` existía en `ci.yml` pero (a) estaba apagado (`vars.ENABLE_AZURE_DEPLOY` sin configurar, `secrets.AZURE_CREDENTIALS` sin configurar — confirmado con `gh secret list` / `gh variable list`, ambos vacíos), (b) no cubría `case-service` en absoluto, y (c) llamaba a `deploy-container-apps.ps1`, un script de **creación desde cero** (`containerapp env create` / `containerapp create`) que habría fallado o tenido efectos no deseados contra un entorno que ya existe desde hace semanas.
+
+Se rediseñó y se dejó listo para activar, pero **la activación final requiere una acción externa que esta sesión no puede completar**: crear el App Registration de Azure AD para que GitHub Actions se autentique. Intento real de `az ad sp create-for-rbac` (alternativa más simple) confirmó `Insufficient privileges to complete the operation` — restricción de Azure AD del tenant académico, no de la suscripción (mismo bloqueo ya documentado arriba para la prueba 2 de RBAC).
+
+### Diseño aplicado (listo, sin activar)
+
+- **Autenticación por OIDC federado**, no por secreto clásico (`secrets.AZURE_CREDENTIALS`) — nada que rotar ni que se pueda filtrar en un log. `azure/login@v2` lo soporta nativamente con `client-id`/`tenant-id`/`subscription-id` como *variables* de repo (no secretos), sin `client-secret`.
+- **`deploy-azure` reescrito para ser idempotente** contra la infraestructura real ya desplegada: en vez de `deploy-container-apps.ps1`, ahora llama a `infrastructure/scripts/deploy-idempotent.sh <tag>`, que solo hace `az containerapp update --image` sobre las 4 Container Apps que ya existen (api, scoring, cases-api, cases-worker) — el mismo comando usado manualmente toda esta semana para publicar cada fix. Nunca crea ni borra recursos.
+- **Registro real corregido**: las 4 Container Apps reales tiran de `acrcentineladev05.azurecr.io` (confirmado con `az containerapp show`), no de GHCR — el job `docker` seguía empujando solo a GHCR, que nadie en Azure lee. `deploy-azure` ahora usa `az acr build` (construye del lado de ACR, cubierto por el rol de gestión `Contributor`, sin necesitar credenciales de push de datos aparte) para las 3 imágenes, incluyendo `case-service`. Se mantiene el push a GHCR en el job `docker` tal cual — sigue siendo el artefacto gratuito versionado del proyecto, independiente de si Azure está arriba o no; el costo de "construir dos veces" solo se paga cuando el deploy real está activo.
+- **`case-service` agregado al pipeline** — no existía compilación ni push de esta imagen en CI hasta ahora, a pesar de ser el tercer servicio en producción desde hace días.
+
+### Lo que falta — una acción de un tercero con más privilegios en el tenant
+
+```bash
+# 1. App Registration (bloqueado para mi cuenta en este tenant)
+az ad app create --display-name "gh-actions-centinela"
+APP_ID=$(az ad app list --display-name "gh-actions-centinela" --query "[0].appId" -o tsv)
+az ad sp create --id "$APP_ID"
+
+# 2. Credencial federada OIDC, limitada a push en main de este repo
+az ad app federated-credential create --id "$APP_ID" --parameters '{
+  "name": "centinela-main-branch",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:centinela-team/centinela:ref:refs/heads/main",
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+
+# 3. Rol mínimo suficiente (Contributor sobre el RG cubre az acr build + az containerapp update)
+az role assignment create --assignee "$APP_ID" --role "Contributor" \
+  --scope "/subscriptions/bcc499f4-13e1-4b24-a323-625c216bfa94/resourceGroups/rg-centinela-dev"
+
+# 4. Variables del repo (esto sí lo puede hacer cualquiera con permiso de admin en el repo de GitHub, no requiere AAD)
+gh variable set AZURE_CLIENT_ID --body "$APP_ID"
+gh variable set AZURE_TENANT_ID --body "f524efae-c921-4e8b-851e-b002089d974d"
+gh variable set AZURE_SUBSCRIPTION_ID --body "bcc499f4-13e1-4b24-a323-625c216bfa94"
+gh variable set ENABLE_AZURE_DEPLOY --body "true"
+```
+
+Con eso, el próximo push a `main` despliega solo — sin ningún cambio adicional de código.
+
+### En qué contexto la decisión sería la contraria (GitHub Actions vs. Azure DevOps/otro)
+
+GitHub Actions se eligió porque el código ya vive en GitHub y el free tier alcanza sin costo adicional de crédito Azure. La decisión sería la contraria si el equipo ya operara dentro del ecosistema Azure DevOps (Boards/Repos ya en uso), si se necesitaran *self-hosted runners* dentro de la VNet privada (Container Apps con integración VNet no expone nada que un runner alojado en Azure necesite evitar exponer, pero un escenario con Private Endpoints estrictos sí lo exigiría — no es este proyecto, que excluye Private Endpoints explícitamente), o si la organización ya tuviera una política corporativa de identidad que solo permite service connections de Azure DevOps y no Apps Registration ad-hoc por repositorio.

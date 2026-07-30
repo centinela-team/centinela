@@ -9,7 +9,7 @@ Demostración en vivo (sin búsqueda intermedia).
 | 3 | Cliente responde antes del análisis | Cronómetro: 202 inmediato; scoring/casos asíncronos en logs |
 | 4 | Escalado bajo carga | Regla KEDA real (`azure-servicebus`, umbral 20 mensajes) en `ca-centinela-scoring-dev`. Evidencia real 2026-07-30: 1→4→1 réplicas, ver `docs/sprint/evidencia-escalado.md` |
 | 5 | Traza por id | Buscar `transactionId` en Application Insights (`search in (requests, dependencies, traces)`) — las 3 etapas (API/scoring/cases) reportan. Ver `docs/architecture/observability.md` |
-| 6 | Push a main → CI | Integración dispara `.github/workflows/ci.yml` (tests + imágenes) |
+| 6 | Push a main → CI | Integración dispara `.github/workflows/ci.yml` (tests + imágenes). `deploy-azure` está diseñado y listo (OIDC, idempotente, incluye `case-service`, ver `docs/architecture/decisions.md` §CI/CD real), pendiente de activar por un bloqueo real: crear el App Registration en Azure AD requiere privilegios que el tenant académico no da a esta cuenta |
 | 7 | Documento ilegible | Subir `samples/document-corrupt.pdf` → `status=error`, caso sigue consultable |
 | 8 | Explicador detenido | `ENABLE_EXPLAINER=false` → caso OPEN sin explanation; al reactivar, el worker la genera solo (barrido automático con TTL, ya no requiere `backfill.py` manual — ver `worker.py::_maybe_backfill_pending_explanations`) |
 
