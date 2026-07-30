@@ -100,6 +100,29 @@ class CaseRepository:
             )
             conn.commit()
 
+    def list_cases_missing_explanation(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT TOP (?) case_id, score, threshold_used, triggered_rules
+                FROM dbo.fraud_case
+                WHERE explanation IS NULL
+                ORDER BY opened_at ASC
+                """,
+                limit,
+            )
+            rows = cur.fetchall()
+        return [
+            {
+                "caseId": str(r[0]),
+                "score": r[1],
+                "threshold": r[2],
+                "triggeredRules": json.loads(r[3]) if r[3] else [],
+            }
+            for r in rows
+        ]
+
     @staticmethod
     def _fmt_dt(value: Any) -> Optional[str]:
         if value is None:

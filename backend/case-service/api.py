@@ -19,12 +19,14 @@ from config_merge import resolve_config
 from cosmos_config_store import ConfigStore, CosmosConfigStore
 from local_config_store import LocalConfigStore
 from sqlite_repository import SqliteCaseRepository
+from telemetry import configure_azure_monitor
 from azure.identity import DefaultAzureCredential
 
 MIN_THRESHOLD = 1
 MAX_THRESHOLD = 102  # suma exacta de RULE_POINTS en scoring-engine/rules.py (35+30+17+20)
 
 logger = logging.getLogger("centinela.case-service")
+configure_azure_monitor("centinela-case-service-api")
 
 _ROOT = Path(__file__).resolve().parents[1]
 _DOC_DIR = _ROOT / "document-service"

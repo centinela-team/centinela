@@ -156,6 +156,29 @@ class SqliteCaseRepository:
             )
             conn.commit()
 
+    def list_cases_missing_explanation(self, limit: int = 20) -> list[dict[str, Any]]:
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT case_id, score, threshold_used, triggered_rules
+                FROM fraud_case
+                WHERE explanation IS NULL
+                ORDER BY opened_at ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "caseId": row["case_id"],
+                "score": row["score"],
+                "threshold": row["threshold_used"],
+                "triggeredRules": json.loads(row["triggered_rules"]) if row["triggered_rules"] else [],
+            }
+            for row in rows
+        ]
+
     def list_cases(self, status: Optional[str] = None) -> list[dict[str, Any]]:
         sql = """
             SELECT case_id, transaction_id, account_id, score, threshold_used,
