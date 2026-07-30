@@ -74,6 +74,10 @@ jobs:
   docker:
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
     steps:
@@ -134,6 +138,58 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Las Container Apps reales tiran de acrcentineladev05.azurecr.io, no de
+      # GHCR (confirmado vía `az containerapp show`) — GHCR arriba es solo
+      # caché/artefacto gratis, no lo que corre en Azure. Se reusa la caché de
+      # build de gha de los 3 pasos anteriores (build casi instantáneo, no
+      # reconstruye desde cero) y se empuja también a ACR con un push normal.
+      #
+      # NOTA: se intentó `az acr build` (server-side, plano de gestión) en vez
+      # de esto, pero Azure lo rechaza con TasksOperationsNotAllowed — ACR
+      # Tasks está deshabilitado por Azure a nivel de suscripción para "Azure
+      # for Students" (confirmado en vivo 2026-07-30, no es un tema de rol ni
+      # de permisos). Por eso el push es plano de datos (docker push normal
+      # tras `az acr login`), que sí funciona en este tipo de suscripción.
+      - name: Azure login (OIDC)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_AZURE_DEPLOY == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_AZURE_DEPLOY == 'true'
+        run: az acr login --name acrcentineladev05
+
+      - name: Push ingestion-api a ACR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_AZURE_DEPLOY == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: backend/ingestion-api
+          push: true
+          tags: acrcentineladev05.azurecr.io/centinela-ingestion-api:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
+
+      - name: Push scoring-engine a ACR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_AZURE_DEPLOY == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: backend/scoring-engine
+          push: true
+          tags: acrcentineladev05.azurecr.io/centinela-scoring-engine:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
+
+      - name: Push case-service a ACR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_AZURE_DEPLOY == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/case-service/Dockerfile
+          push: true
+          tags: acrcentineladev05.azurecr.io/centinela-case-service:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
+
   # Requiere que exista un App Registration + credencial federada OIDC en Azure
   # AD (ver docs/architecture/decisions.md "CD real — activación pendiente") y
   # las variables de repo AZURE_CLIENT_ID / AZURE_TENANT_ID /
@@ -155,23 +211,6 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Build images en ACR
-        # Las Container Apps reales tiran de acrcentineladev05.azurecr.io, no
-        # de GHCR (confirmado 2026-07-30 vía `az containerapp show`) — GHCR
-        # arriba es solo caché/artefacto gratis, no lo que corre en Azure.
-        # az acr build construye del lado de ACR (plano de gestión, cubierto
-        # por el rol Contributor del service principal), sin necesitar un
-        # segundo docker login/push data-plane.
-        run: |
-          TAG="${{ needs.docker.outputs.tag }}"
-          pids=()
-          az acr build --registry acrcentineladev05 --image "centinela-ingestion-api:$TAG" backend/ingestion-api & pids+=($!)
-          az acr build --registry acrcentineladev05 --image "centinela-scoring-engine:$TAG" backend/scoring-engine & pids+=($!)
-          az acr build --registry acrcentineladev05 --image "centinela-case-service:$TAG" -f backend/case-service/Dockerfile backend & pids+=($!)
-          fail=0
-          for pid in "${pids[@]}"; do wait "$pid" || fail=1; done
-          exit $fail
 
       - name: Deploy Container Apps (idempotente)
         run: |
