@@ -153,7 +153,10 @@ def _jwt_secret() -> str:
 
     secret = _env("AUTH_JWT_SECRET")
     if not secret:
-        raise RuntimeError("AUTH_JWT_SECRET es obligatorio (Key Vault o env var)")
+        if _env("CASE_STORE", "sqlite").lower() == "azure_sql":
+            raise RuntimeError("AUTH_JWT_SECRET es obligatorio (Key Vault o env var)")
+        secret = "dev-only-jwt-secret-not-for-production"
+        logger.warning("AUTH_JWT_SECRET dev-only en uso — NO usar en producción")
     _jwt_secret_cache = secret
     return _jwt_secret_cache
 
